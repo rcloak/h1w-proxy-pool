@@ -68,6 +68,28 @@ class ProxyDocument(TypedDict):
     items: list[ProxyItem]
 
 
+class RefreshProgress(TypedDict):
+    status: Literal["idle", "running", "failed"]
+    started_at: str | None
+    finished_at: str | None
+    checked: int
+    total: int
+    alive: int
+    current_protocol: Protocol | None
+
+
+def idle_refresh_progress() -> RefreshProgress:
+    return {
+        "status": "idle",
+        "started_at": None,
+        "finished_at": None,
+        "checked": 0,
+        "total": 0,
+        "alive": 0,
+        "current_protocol": None,
+    }
+
+
 def empty_proxy_document(generated_at: str = "") -> ProxyDocument:
     return {
         "version": 2,

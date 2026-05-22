@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from proxy_pool.config import load_config
-from proxy_pool.models import CheckedProxy, checked_proxy_to_item, empty_proxy_document
+from proxy_pool.models import CheckedProxy, checked_proxy_to_item, empty_proxy_document, idle_refresh_progress
 
 
 def test_load_config_reads_general_settings(tmp_path: Path):
@@ -176,6 +176,28 @@ def test_empty_proxy_document_returns_v2_schema():
         "total": 0,
         "items": [],
     }
+
+
+def test_idle_refresh_progress_returns_stable_shape():
+    result = idle_refresh_progress()
+
+    assert result == {
+        "status": "idle",
+        "started_at": None,
+        "finished_at": None,
+        "checked": 0,
+        "total": 0,
+        "alive": 0,
+        "current_protocol": None,
+    }
+
+
+def test_idle_refresh_progress_returns_new_dict_each_time():
+    first = idle_refresh_progress()
+    second = idle_refresh_progress()
+    first["status"] = "running"
+
+    assert second["status"] == "idle"
 
 
 def test_checked_proxy_to_item_returns_clean_v2_item():
