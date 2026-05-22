@@ -12,6 +12,7 @@ from fastapi import FastAPI
 
 from proxy_pool.api import router
 from proxy_pool.config import load_config
+from proxy_pool.models import RefreshProgress, idle_refresh_progress
 from proxy_pool.scheduler import scheduler_loop
 
 
@@ -28,6 +29,7 @@ def default_last_refresh() -> dict[str, Any]:
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.last_scheduler_error = None
     app.state.last_refresh = default_last_refresh()
+    app.state.current_refresh = idle_refresh_progress()
 
     if app.state.start_scheduler and app.state.settings is not None:
         def record_scheduler_error(exc: Exception) -> None:
@@ -41,6 +43,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "proxies_alive": int(payload.get("total", 0)),
             }
 
+        def record_refresh_progress(progress: RefreshProgress) -> None:
+            app.state.current_refresh = dict(progress)
+
         stop_event = asyncio.Event()
         app.state.scheduler_stop_event = stop_event
         app.state.scheduler_task = asyncio.create_task(
@@ -49,6 +54,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 stop_event,
                 on_error=record_scheduler_error,
                 on_success=record_scheduler_success,
+                on_progress=record_refresh_progress,
             )
         )
     else:
@@ -81,6 +87,7 @@ def create_app(result_path: str | Path | None = None, start_scheduler: bool = Tr
 
     app.state.start_scheduler = start_scheduler
     app.state.last_refresh = default_last_refresh()
+    app.state.current_refresh = idle_refresh_progress()
     app.include_router(router)
     return app
 

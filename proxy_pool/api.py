@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from proxy_pool.models import ProxyItem
+from proxy_pool.models import ProxyItem, idle_refresh_progress
 from proxy_pool.storage import read_proxy_document
 
 router = APIRouter()
@@ -79,11 +79,16 @@ def stats(request: Request) -> dict[str, Any]:
             "proxies_alive": 0,
         }
 
+    current_refresh = getattr(request.app.state, "current_refresh", None)
+    if not isinstance(current_refresh, dict):
+        current_refresh = idle_refresh_progress()
+
     return {
         "total": payload["total"],
         "by_source_protocol": by_source_protocol,
         "by_capability": by_capability,
         "last_refresh": last_refresh,
+        "current_refresh": current_refresh,
     }
 
 
@@ -100,6 +105,9 @@ def health(request: Request) -> dict[str, object]:
         payload["scheduler_running"] = task is not None and not task.done()
     if hasattr(request.app.state, "last_scheduler_error"):
         payload["last_scheduler_error"] = request.app.state.last_scheduler_error
+    current_refresh = getattr(request.app.state, "current_refresh", None)
+    if isinstance(current_refresh, dict):
+        payload["refresh_running"] = current_refresh.get("status") == "running"
     return payload
 
 
