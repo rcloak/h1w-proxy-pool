@@ -189,7 +189,46 @@ def test_checked_proxy_to_json_maps_country_code_to_camel_case():
         "countryCode": "US",
         "is_anonymous": True,
         "timeout": 0.42,
+        "score": 0.0,
+        "success_rate": 0.0,
+        "success_count": 0,
+        "failure_count": 0,
+        "supports_http": False,
+        "supports_https": False,
+        "avg_timeout": 0.0,
+        "last_error": None,
+        "checked_at": "",
     }
+
+
+def test_checked_proxy_to_json_includes_quality_fields():
+    item = checked_proxy_to_json(
+        CheckedProxy(
+            address="1.2.3.4:80",
+            country_code="US",
+            is_anonymous=True,
+            timeout=0.5,
+            score=90.0,
+            success_rate=1.0,
+            success_count=4,
+            failure_count=0,
+            supports_http=True,
+            supports_https=True,
+            avg_timeout=0.5,
+            last_error=None,
+            checked_at="2026-05-22T12:00:00Z",
+        )
+    )
+
+    assert item["score"] == 90.0
+    assert item["success_rate"] == 1.0
+    assert item["success_count"] == 4
+    assert item["failure_count"] == 0
+    assert item["supports_http"] is True
+    assert item["supports_https"] is True
+    assert item["avg_timeout"] == 0.5
+    assert item["last_error"] is None
+    assert item["checked_at"] == "2026-05-22T12:00:00Z"
 
 
 def test_load_config_reads_checker_settings(tmp_path: Path):

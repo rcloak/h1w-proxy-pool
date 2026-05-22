@@ -49,13 +49,40 @@ def _normalize_proxy_item(item: object) -> ProxyJsonItem | None:
         return None
     if isinstance(timeout, bool) or not isinstance(timeout, int | float):
         return None
+    timeout_float = float(timeout)
+
+    supports_http = item.get("supports_http")
+    supports_https = item.get("supports_https")
+    last_error = item.get("last_error")
+    checked_at = item.get("checked_at")
 
     return {
         "address": address,
         "countryCode": country_code,
         "is_anonymous": is_anonymous,
-        "timeout": float(timeout),
+        "timeout": timeout_float,
+        "score": _number(item.get("score"), 0.0),
+        "success_rate": _number(item.get("success_rate"), 0.0),
+        "success_count": _int(item.get("success_count"), 0),
+        "failure_count": _int(item.get("failure_count"), 0),
+        "supports_http": supports_http if isinstance(supports_http, bool) else False,
+        "supports_https": supports_https if isinstance(supports_https, bool) else False,
+        "avg_timeout": _number(item.get("avg_timeout"), timeout_float),
+        "last_error": last_error if isinstance(last_error, str) or last_error is None else str(last_error),
+        "checked_at": checked_at if isinstance(checked_at, str) else "",
     }
+
+
+def _number(value: object, default: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return default
+    return float(value)
+
+
+def _int(value: object, default: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return default
+    return value
 
 
 def write_proxy_json(path: Path, payload: ProxyJson) -> None:

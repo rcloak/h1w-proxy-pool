@@ -25,15 +25,91 @@ def test_read_proxy_json_drops_invalid_proxy_items(tmp_path: Path):
     result = read_proxy_json(target)
 
     assert result["total_count_of_proxies"] == 1
-    assert result["http"] == [{"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": True, "timeout": 0.5}]
+    assert result["http"] == [
+        {
+            "address": "1.2.3.4:80",
+            "countryCode": "US",
+            "is_anonymous": True,
+            "timeout": 0.5,
+            "score": 0.0,
+            "success_rate": 0.0,
+            "success_count": 0,
+            "failure_count": 0,
+            "supports_http": False,
+            "supports_https": False,
+            "avg_timeout": 0.5,
+            "last_error": None,
+            "checked_at": "",
+        }
+    ]
     assert result["socks4"] == []
     assert result["socks5"] == []
+
+
+def test_read_proxy_json_preserves_quality_fields(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        '{"http": [{"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": true, "timeout": 0.5, "score": 90.0, "success_rate": 1.0, "success_count": 4, "failure_count": 0, "supports_http": true, "supports_https": true, "avg_timeout": 0.5, "last_error": null, "checked_at": "2026-05-22T12:00:00Z"}], "socks4": [], "socks5": []}',
+        encoding="utf-8",
+    )
+
+    result = read_proxy_json(target)
+
+    item = result["http"][0]
+    assert item["score"] == 90.0
+    assert item["success_rate"] == 1.0
+    assert item["success_count"] == 4
+    assert item["failure_count"] == 0
+    assert item["supports_http"] is True
+    assert item["supports_https"] is True
+    assert item["avg_timeout"] == 0.5
+    assert item["last_error"] is None
+    assert item["checked_at"] == "2026-05-22T12:00:00Z"
+
+
+def test_read_proxy_json_accepts_legacy_items_without_quality_fields(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        '{"http": [{"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": true, "timeout": 0.5}], "socks4": [], "socks5": []}',
+        encoding="utf-8",
+    )
+
+    result = read_proxy_json(target)
+
+    assert result["total_count_of_proxies"] == 1
+    item = result["http"][0]
+    assert item["address"] == "1.2.3.4:80"
+    assert item["score"] == 0.0
+    assert item["success_rate"] == 0.0
+    assert item["success_count"] == 0
+    assert item["failure_count"] == 0
+    assert item["supports_http"] is False
+    assert item["supports_https"] is False
+    assert item["avg_timeout"] == 0.5
+    assert item["last_error"] is None
+    assert item["checked_at"] == ""
 
 
 def test_write_proxy_json_writes_schema_atomically(tmp_path: Path):
     target = tmp_path / "proxies.json"
     payload = empty_proxy_json()
-    payload["http"].append({"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": True, "timeout": 0.5})
+    payload["http"].append(
+        {
+            "address": "1.2.3.4:80",
+            "countryCode": "US",
+            "is_anonymous": True,
+            "timeout": 0.5,
+            "score": 0.0,
+            "success_rate": 0.0,
+            "success_count": 0,
+            "failure_count": 0,
+            "supports_http": False,
+            "supports_https": False,
+            "avg_timeout": 0.5,
+            "last_error": None,
+            "checked_at": "",
+        }
+    )
     payload["total_count_of_proxies"] = 1
 
     write_proxy_json(target, payload)

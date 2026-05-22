@@ -11,7 +11,23 @@ from proxy_pool.storage import write_proxy_json
 
 def test_root_returns_full_json_without_filters(tmp_path: Path):
     payload = empty_proxy_json()
-    payload["http"].append({"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": True, "timeout": 0.2})
+    payload["http"].append(
+        {
+            "address": "1.2.3.4:80",
+            "countryCode": "US",
+            "is_anonymous": True,
+            "timeout": 0.2,
+            "score": 0.0,
+            "success_rate": 0.0,
+            "success_count": 0,
+            "failure_count": 0,
+            "supports_http": False,
+            "supports_https": False,
+            "avg_timeout": 0.2,
+            "last_error": None,
+            "checked_at": "",
+        }
+    )
     payload["total_count_of_proxies"] = 1
     result_path = tmp_path / "proxies.json"
     write_proxy_json(result_path, payload)
@@ -39,7 +55,22 @@ def test_root_filters_by_protocol_country_anonymity_and_timeout(tmp_path: Path):
 
     assert response.status_code == 200
     assert response.json() == [
-        {"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": True, "timeout": 0.2, "prototype": "http"}
+        {
+            "address": "1.2.3.4:80",
+            "countryCode": "US",
+            "is_anonymous": True,
+            "timeout": 0.2,
+            "score": 0.0,
+            "success_rate": 0.0,
+            "success_count": 0,
+            "failure_count": 0,
+            "supports_http": False,
+            "supports_https": False,
+            "avg_timeout": 0.2,
+            "last_error": None,
+            "checked_at": "",
+            "prototype": "http",
+        }
     ]
 
 

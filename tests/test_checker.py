@@ -70,9 +70,37 @@ def test_build_proxy_json_preserves_schema_and_counts():
 
     assert result["total_count_of_proxies"] == 2
     assert result["http"] == [
-        {"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": True, "timeout": 0.2}
+        {
+            "address": "1.2.3.4:80",
+            "countryCode": "US",
+            "is_anonymous": True,
+            "timeout": 0.2,
+            "score": 0.0,
+            "success_rate": 0.0,
+            "success_count": 0,
+            "failure_count": 0,
+            "supports_http": False,
+            "supports_https": False,
+            "avg_timeout": 0.0,
+            "last_error": None,
+            "checked_at": "",
+        }
     ]
     assert result["socks4"] == []
     assert result["socks5"] == [
-        {"address": "5.6.7.8:1080", "countryCode": "DE", "is_anonymous": False, "timeout": 1.1}
+        {
+            "address": "5.6.7.8:1080",
+            "countryCode": "DE",
+            "is_anonymous": False,
+            "timeout": 1.1,
+            "score": 0.0,
+            "success_rate": 0.0,
+            "success_count": 0,
+            "failure_count": 0,
+            "supports_http": False,
+            "supports_https": False,
+            "avg_timeout": 0.0,
+            "last_error": None,
+            "checked_at": "",
+        }
     ]
