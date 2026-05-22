@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ipaddress import ip_address
 from math import isfinite
 from typing import Literal, NotRequired, TypedDict
 
@@ -187,6 +188,17 @@ def empty_proxy_document(generated_at: str = "") -> ProxyDocument:
 
 
 def checked_proxy_to_item(proxy: CheckedProxy) -> ProxyItem:
+    if not proxy.endpoint:
+        raise ValueError("CheckedProxy endpoint is required for v2 item")
+    if proxy.source_protocol not in ("http", "socks4", "socks5"):
+        raise ValueError("CheckedProxy source_protocol is invalid for v2 item")
+    if not proxy.usable_as or any(capability not in ("http", "https") for capability in proxy.usable_as):
+        raise ValueError("CheckedProxy usable_as is required for v2 item")
+    try:
+        ip_address(proxy.exit_ip)
+    except ValueError as exc:
+        raise ValueError("CheckedProxy exit_ip must be a valid IP address") from exc
+
     return {
         "endpoint": proxy.endpoint,
         "source_protocol": proxy.source_protocol,

@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from proxy_pool.models import empty_proxy_document
@@ -42,7 +43,7 @@ def test_read_proxy_document_normalizes_v2_items_and_recomputes_total(tmp_path: 
     {
       "endpoint": "1.2.3.4:8080",
       "source_protocol": "http",
-      "usable_as": ["https", "bad", "http", "https"],
+      "usable_as": ["https", "http", "https"],
       "quality": {
         "score": 999,
         "success_rate": -1,
@@ -90,6 +91,128 @@ def test_read_proxy_document_normalizes_v2_items_and_recomputes_total(tmp_path: 
             }
         ],
     }
+
+
+def test_read_proxy_document_drops_item_with_empty_usable_as(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        """
+{
+  "version": 2,
+  "generated_at": "2026-05-22T12:00:00Z",
+  "total": 1,
+  "items": [
+    {
+      "endpoint": "1.2.3.4:8080",
+      "source_protocol": "http",
+      "usable_as": [],
+      "quality": {
+        "score": 90.8,
+        "success_rate": 1.0,
+        "checks_passed": 2,
+        "checks_failed": 0,
+        "avg_latency_ms": 420,
+        "last_error": null
+      },
+      "network": {
+        "exit_ip": "8.8.8.8",
+        "country_code": "US",
+        "anonymous": true
+      },
+      "timestamps": {"checked_at": "2026-05-22T12:00:00Z"}
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert read_proxy_document(target) == empty_proxy_document(generated_at="2026-05-22T12:00:00Z")
+
+
+def test_read_proxy_document_drops_item_with_invalid_usable_as(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        """
+{
+  "version": 2,
+  "generated_at": "2026-05-22T12:00:00Z",
+  "total": 1,
+  "items": [
+    {
+      "endpoint": "1.2.3.4:8080",
+      "source_protocol": "http",
+      "usable_as": ["http", "bad"],
+      "quality": {
+        "score": 90.8,
+        "success_rate": 1.0,
+        "checks_passed": 2,
+        "checks_failed": 0,
+        "avg_latency_ms": 420,
+        "last_error": null
+      },
+      "network": {
+        "exit_ip": "8.8.8.8",
+        "country_code": "US",
+        "anonymous": true
+      },
+      "timestamps": {"checked_at": "2026-05-22T12:00:00Z"}
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert read_proxy_document(target) == empty_proxy_document(generated_at="2026-05-22T12:00:00Z")
+
+
+def test_read_proxy_document_drops_item_with_invalid_exit_ip(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        """
+{
+  "version": 2,
+  "generated_at": "2026-05-22T12:00:00Z",
+  "total": 1,
+  "items": [
+    {
+      "endpoint": "1.2.3.4:8080",
+      "source_protocol": "http",
+      "usable_as": ["http"],
+      "quality": {
+        "score": 90.8,
+        "success_rate": 1.0,
+        "checks_passed": 2,
+        "checks_failed": 0,
+        "avg_latency_ms": 420,
+        "last_error": null
+      },
+      "network": {
+        "exit_ip": "not-an-ip",
+        "country_code": "US",
+        "anonymous": true
+      },
+      "timestamps": {"checked_at": "2026-05-22T12:00:00Z"}
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert read_proxy_document(target) == empty_proxy_document(generated_at="2026-05-22T12:00:00Z")
+
+
+def test_write_proxy_document_normalizes_invalid_generated_at_to_empty_string(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    payload = empty_proxy_document(generated_at="2026-05-22T12:00:00Z")
+    payload["generated_at"] = 123
+
+    write_proxy_document(target, payload)
+
+    assert json.loads(target.read_text(encoding="utf-8"))["generated_at"] == ""
+    assert read_proxy_document(target) == empty_proxy_document()
 
 
 def test_write_proxy_document_writes_v2_schema_atomically(tmp_path: Path):

@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from proxy_pool.config import load_config
 from proxy_pool.models import CheckedProxy, checked_proxy_to_item, empty_proxy_document
 
@@ -230,6 +232,18 @@ def test_checked_proxy_to_item_clamps_quality_values():
         "avg_latency_ms": 0,
         "last_error": "failed",
     }
+
+
+def test_checked_proxy_to_item_rejects_incomplete_legacy_proxy():
+    proxy = CheckedProxy(
+        address="1.2.3.4:8080",
+        country_code="US",
+        is_anonymous=True,
+        timeout=0.42,
+    )
+
+    with pytest.raises(ValueError):
+        checked_proxy_to_item(proxy)
 
 
 def test_load_config_reads_checker_settings(tmp_path: Path):

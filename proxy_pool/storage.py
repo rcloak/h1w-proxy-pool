@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from ipaddress import ip_address
 from math import isfinite
 from pathlib import Path
 from typing import Any, cast
@@ -55,12 +56,14 @@ def _normalize_proxy_item(item: object) -> ProxyItem | None:
         return None
 
     usable_as = _normalize_capabilities(item.get("usable_as"))
+    if usable_as is None:
+        return None
     exit_ip = network.get("exit_ip")
     country_code = network.get("country_code")
     anonymous = network.get("anonymous")
     checked_at = timestamps.get("checked_at")
 
-    if not isinstance(exit_ip, str):
+    if not isinstance(exit_ip, str) or not _valid_ip(exit_ip):
         return None
     if not isinstance(country_code, str):
         return None
@@ -89,22 +92,35 @@ def _normalize_proxy_item(item: object) -> ProxyItem | None:
     }
 
 
-def _normalize_capabilities(value: object) -> list[Capability]:
+def _normalize_capabilities(value: object) -> list[Capability] | None:
     if not isinstance(value, list):
-        return []
+        return None
 
     result: list[Capability] = []
     for item in value:
-        if item in ("http", "https") and item not in result:
+        if item not in ("http", "https"):
+            return None
+        if item not in result:
             result.append(cast(Capability, item))
+    if not result:
+        return None
     return result
 
 
 def write_proxy_document(path: Path, payload: ProxyDocument) -> None:
-    normalized = empty_proxy_document(generated_at=payload.get("generated_at", ""))
+    generated_at = payload.get("generated_at", "")
+    normalized = empty_proxy_document(generated_at=generated_at if isinstance(generated_at, str) else "")
     normalized["items"] = [normalized_item for item in payload.get("items", []) if (normalized_item := _normalize_proxy_item(item))]
     normalized["total"] = len(normalized["items"])
     _write_json_atomic(path, cast(dict[str, Any], normalized))
+
+
+def _valid_ip(value: str) -> bool:
+    try:
+        ip_address(value)
+    except ValueError:
+        return False
+    return True
 
 
 def read_proxy_json(path: Path) -> ProxyJson:
