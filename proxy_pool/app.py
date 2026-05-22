@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 import uvicorn
@@ -7,10 +10,36 @@ from fastapi import FastAPI
 
 from proxy_pool.api import router
 from proxy_pool.config import load_config
+from proxy_pool.scheduler import scheduler_loop
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if app.state.start_scheduler and app.state.settings is not None:
+        stop_event = asyncio.Event()
+        app.state.scheduler_stop_event = stop_event
+        app.state.scheduler_task = asyncio.create_task(
+            scheduler_loop(app.state.settings, stop_event)
+        )
+    else:
+        app.state.scheduler_task = None
+
+    try:
+        yield
+    finally:
+        stop_event = getattr(app.state, "scheduler_stop_event", None)
+        if stop_event is not None:
+            stop_event.set()
+
+        task = getattr(app.state, "scheduler_task", None)
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
 
 def create_app(result_path: str | Path | None = None, start_scheduler: bool = True) -> FastAPI:
-    app = FastAPI(title="Proxy Pool")
+    app = FastAPI(title="Proxy Pool", lifespan=lifespan)
 
     if result_path is None:
         settings = load_config()
