@@ -75,20 +75,21 @@ Goal: turn the legacy proxy scraper into a maintainable FastAPI service, then ad
 
 **Status:** Planned.
 
-**Problem:** The first modernization pass already covers scheduler refresh/error tracking, health reporting for scheduler errors, malformed and atomic storage behavior, and API filter interactions. Remaining gaps are concentrated around source freshness audit findings, checker endpoint behavior, protocol-specific connector behavior, dependency cleanup, and operational smoke coverage.
+**Problem:** The first modernization pass already covers scheduler refresh/error tracking, health reporting for scheduler errors, malformed and atomic storage behavior, API filter interactions, and deterministic checker quality behavior. Remaining gaps are concentrated around source freshness audit findings, dependency cleanup, live smoke automation, and CI/runtime smoke coverage.
 
 **Actions:**
 
 - Add tests for any source parsing or config edge cases discovered during the source cleanup phase, without duplicating the existing extraction tests.
-- Add checker tests for configurable endpoint behavior, check response contract validation, throttled responses, malformed JSON, missing fields, and protocol-specific connector URL construction.
 - Add coverage for cleanup of transitional Flask/Waitress dependencies if they are removed, including import and entry-point checks that prove FastAPI/Uvicorn remains the active runtime path.
 - Add Docker or command-level smoke checks where feasible in CI or local verification docs, especially for `uv run proxy-pool-scrape`, `uv run uvicorn proxy_pool.app:app`, and image startup assumptions.
+- Add live smoke automation that tolerates variable public proxy yield while still proving the scrape/check/write loop completes.
 - Track coverage by behavior rather than chasing a numeric threshold alone.
 
 **Acceptance checks:**
 
 - `uv run pytest` passes without live network dependency.
-- New tests fail deterministically when source audit assumptions, checker endpoint parsing, protocol connector construction, or runtime dependency cleanup regress.
+- New tests fail deterministically when source audit assumptions or runtime dependency cleanup regress.
+- CI or documented smoke checks cover Docker image startup and one-off refresh execution where environment support is available.
 - Documentation lists the primary local verification commands for contributors.
 
 ### Phase 5: Operations
