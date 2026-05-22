@@ -132,8 +132,8 @@ Example response:
     "https": 1
   },
   "last_refresh": {
-    "started_at": "2026-05-22T12:00:00Z",
-    "finished_at": "2026-05-22T12:00:05Z",
+    "started_at": "2026-05-22T12:00:00+00:00",
+    "finished_at": "2026-05-22T12:00:05+00:00",
     "duration_seconds": 5.0,
     "proxies_alive": 2
   }

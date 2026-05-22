@@ -21,7 +21,7 @@ Tasks 1-9 have completed the first modernization pass on this branch. The remain
 
 - Keep the service small and dependency-light; avoid adding infrastructure unless it directly addresses a known risk.
 - Preserve the checked-in `config.ini` source-list model so operators can enable, disable, or replace sources without code changes.
-- Continue supporting HTTP, SOCKS4, and SOCKS5 proxy categories in the JSON output and API filters.
+- Continue supporting HTTP, SOCKS4, and SOCKS5 source protocols while exposing clean v2 proxy items and filters.
 - Treat `/app/data/proxies.json` as the Docker persistence path while allowing local development to use a writable configured path.
 - Use asynchronous network I/O and bounded concurrency for scraping and checking so slow public endpoints do not stall the whole service.
 - Keep tests deterministic by mocking network behavior instead of depending on live public proxy sources or check endpoints.
@@ -30,8 +30,8 @@ Tasks 1-9 have completed the first modernization pass on this branch. The remain
 ## Known Risks
 
 - Source lists may be stale, unavailable, duplicated, or contain endpoints that no longer publish parseable `ip:port` rows.
-- Checker correctness currently depends on one public, rate-limited IP API endpoint, which can throttle, fail, or bias results.
-- Protocol checks use a shared response interpretation path; protocol-specific connection behavior needs targeted validation.
+- Checker correctness depends on multiple public IP API endpoints and external proxy behavior; endpoint throttling, schema drift, outages, or regional bias can still affect results.
+- Protocol checks share response interpretation while using protocol-specific connectors; new connector behavior needs targeted validation when changed.
 - Public proxy validation is inherently flaky because candidate proxies, upstream source pages, and external IP APIs change constantly.
 - Test coverage exists but should be expanded around failure modes, scheduler behavior, API filtering combinations, and Docker/operations assumptions.
 - Health and logging are functional but minimal; production troubleshooting needs clearer refresh metrics and error visibility.
