@@ -8,8 +8,10 @@ dependencies = [
     "aiohttp>=3.9.5",
     "aiohttp-socks>=0.8.4",
     "fastapi>=0.111.0",
+    "flask>=2.2.5",
     "rich>=13.7.1",
     "uvicorn[standard]>=0.30.1",
+    "waitress>=2.1.2",
 ]
 
 [project.optional-dependencies]
