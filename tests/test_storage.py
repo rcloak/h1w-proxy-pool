@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from proxy_pool.models import empty_proxy_document
 from proxy_pool.storage import read_proxy_document, write_proxy_document
 
@@ -235,6 +237,44 @@ def test_read_proxy_document_drops_item_with_invalid_endpoint(tmp_path: Path):
   ]
 }
 """.strip(),
+        encoding="utf-8",
+    )
+
+    assert read_proxy_document(target) == empty_proxy_document(generated_at="2026-05-22T12:00:00Z")
+
+
+@pytest.mark.parametrize("endpoint", ["1.2.3.4:+80", "1.2.3.4: 80", "1.2.3.4:80\n"])
+def test_read_proxy_document_drops_item_with_non_canonical_port(endpoint: str, tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "generated_at": "2026-05-22T12:00:00Z",
+                "total": 1,
+                "items": [
+                    {
+                        "endpoint": endpoint,
+                        "source_protocol": "http",
+                        "usable_as": ["http"],
+                        "quality": {
+                            "score": 90.8,
+                            "success_rate": 1.0,
+                            "checks_passed": 2,
+                            "checks_failed": 0,
+                            "avg_latency_ms": 420,
+                            "last_error": None,
+                        },
+                        "network": {
+                            "exit_ip": "8.8.8.8",
+                            "country_code": "US",
+                            "anonymous": True,
+                        },
+                        "timestamps": {"checked_at": "2026-05-22T12:00:00Z"},
+                    }
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 

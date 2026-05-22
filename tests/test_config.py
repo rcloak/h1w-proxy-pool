@@ -243,9 +243,10 @@ def test_checked_proxy_requires_v2_constructor_fields():
         )
 
 
-def test_checked_proxy_to_item_rejects_invalid_endpoint():
+@pytest.mark.parametrize("endpoint", ["not-an-endpoint", "1.2.3.4:+80", "1.2.3.4: 80", "1.2.3.4:80\n"])
+def test_checked_proxy_to_item_rejects_invalid_endpoint(endpoint: str):
     proxy = CheckedProxy(
-        endpoint="not-an-endpoint",
+        endpoint=endpoint,
         source_protocol="http",
         usable_as=("http",),
         exit_ip="8.8.8.8",

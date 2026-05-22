@@ -4,7 +4,7 @@ The API is served by FastAPI from `proxy_pool.app:app`.
 
 ## `GET /proxies`
 
-Returns the current v2 proxy list from the result JSON file. The response is always a list document with a `total` count and `items` array, including when filters are supplied.
+Returns the current v2 proxy list from the result JSON file. The response is always a list document with a `total` count and `items` array, including when filters are supplied. By default, items are returned in stored order: quality score descending, average latency ascending, then endpoint ascending.
 
 Example response:
 

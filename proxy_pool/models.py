@@ -116,6 +116,8 @@ def valid_endpoint(value: str) -> bool:
         return False
     try:
         ip_address(host)
+        if not port.isdigit():
+            return False
         port_number = int(port)
     except ValueError:
         return False
