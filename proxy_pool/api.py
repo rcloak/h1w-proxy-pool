@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 
 from proxy_pool.models import ProxyJson
 from proxy_pool.storage import read_proxy_json
@@ -68,6 +69,8 @@ def root(
 ) -> ProxyJson | list[dict[str, Any]]:
     result_path: Path = request.app.state.result_path
     payload = read_proxy_json(result_path)
+    minscore = _validate_finite_filter("minscore", minscore)
+    minsuccessrate = _validate_finite_filter("minsuccessrate", minsuccessrate)
 
     if (
         prototypes is None
@@ -112,3 +115,9 @@ def _split_filter(value: str | None) -> set[str] | None:
     if value is None:
         return None
     return {item.strip().lower() for item in value.split(",") if item.strip()}
+
+
+def _validate_finite_filter(name: str, value: float | None) -> float | None:
+    if value is not None and not math.isfinite(value):
+        raise HTTPException(status_code=422, detail=f"{name} must be finite")
+    return value

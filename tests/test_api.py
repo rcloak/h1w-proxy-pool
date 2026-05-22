@@ -136,6 +136,45 @@ def test_root_filters_by_quality_fields(tmp_path: Path):
     ]
 
 
+def test_root_rejects_nan_minscore(tmp_path: Path):
+    result_path = tmp_path / "proxies.json"
+    write_proxy_json(result_path, empty_proxy_json())
+
+    client = TestClient(create_app(result_path=result_path, start_scheduler=False))
+    response = client.get("/?minscore=nan")
+
+    assert response.status_code == 422
+    assert "minscore must be finite" in response.json()["detail"]
+
+
+def test_root_rejects_infinite_minsuccessrate(tmp_path: Path):
+    result_path = tmp_path / "proxies.json"
+    write_proxy_json(result_path, empty_proxy_json())
+
+    client = TestClient(create_app(result_path=result_path, start_scheduler=False))
+    response = client.get("/?minsuccessrate=inf")
+
+    assert response.status_code == 422
+    assert "minsuccessrate must be finite" in response.json()["detail"]
+
+
+def test_root_filters_by_supportshttps_false(tmp_path: Path):
+    payload = empty_proxy_json()
+    payload["http"] = [
+        {"address": "1.1.1.1:80", "countryCode": "US", "is_anonymous": True, "timeout": 0.1, "supports_https": True},
+        {"address": "2.2.2.2:80", "countryCode": "US", "is_anonymous": True, "timeout": 0.2, "supports_https": False},
+    ]
+    payload["total_count_of_proxies"] = 2
+    result_path = tmp_path / "proxies.json"
+    write_proxy_json(result_path, payload)
+
+    client = TestClient(create_app(result_path=result_path, start_scheduler=False))
+    response = client.get("/?supportshttps=false")
+
+    assert response.status_code == 200
+    assert [item["address"] for item in response.json()] == ["2.2.2.2:80"]
+
+
 def test_root_filter_without_maxtimeout_does_not_crash(tmp_path: Path):
     payload = empty_proxy_json()
     payload["http"].append({"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": True, "timeout": 0.2})
