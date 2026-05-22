@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, cast
 
-from proxy_pool.models import ProxyJson, empty_proxy_json
+from proxy_pool.models import ProxyJson, ProxyJsonItem, empty_proxy_json
 
 
 def read_proxy_json(path: Path) -> ProxyJson:
@@ -22,12 +22,40 @@ def read_proxy_json(path: Path) -> ProxyJson:
     for protocol in ("http", "socks4", "socks5"):
         value = payload.get(protocol)
         if isinstance(value, list):
-            normalized[protocol] = value
+            normalized[protocol] = [
+                normalized_item for item in value if (normalized_item := _normalize_proxy_item(item)) is not None
+            ]
 
     normalized["total_count_of_proxies"] = sum(
         len(normalized[protocol]) for protocol in ("http", "socks4", "socks5")
     )
     return cast(ProxyJson, normalized)
+
+
+def _normalize_proxy_item(item: object) -> ProxyJsonItem | None:
+    if not isinstance(item, dict):
+        return None
+
+    address = item.get("address")
+    country_code = item.get("countryCode")
+    is_anonymous = item.get("is_anonymous")
+    timeout = item.get("timeout")
+
+    if not isinstance(address, str):
+        return None
+    if not isinstance(country_code, str):
+        return None
+    if not isinstance(is_anonymous, bool):
+        return None
+    if isinstance(timeout, bool) or not isinstance(timeout, int | float):
+        return None
+
+    return {
+        "address": address,
+        "countryCode": country_code,
+        "is_anonymous": is_anonymous,
+        "timeout": float(timeout),
+    }
 
 
 def write_proxy_json(path: Path, payload: ProxyJson) -> None:
