@@ -15,7 +15,7 @@ The current branch modernizes the original proxy-pool implementation into a main
 - Unit tests covering configuration, storage, source parsing, checker behavior, API responses, and app lifecycle basics.
 - User-facing documentation for architecture, configuration, API usage, and operations.
 
-Tasks 1-9 have completed the first modernization pass on this branch. The remaining project work should harden correctness, freshness, and operations rather than reintroduce broad rewrites.
+Tasks 1-9 have completed the first modernization pass on this branch. The remaining project work should harden correctness, freshness, and operations rather than reintroduce broad rewrites. `flask` and `waitress` remain transitional dependencies from the migration and should be removed in a cleanup follow-up once legacy compatibility is no longer needed.
 
 ## Constraints
 
@@ -25,6 +25,7 @@ Tasks 1-9 have completed the first modernization pass on this branch. The remain
 - Treat `/app/data/proxies.json` as the Docker persistence path while allowing local development to use a writable configured path.
 - Use asynchronous network I/O and bounded concurrency for scraping and checking so slow public endpoints do not stall the whole service.
 - Keep tests deterministic by mocking network behavior instead of depending on live public proxy sources or check endpoints.
+- Treat removal of transitional Flask/Waitress dependencies as a tracked cleanup item, not as part of unrelated hardening work.
 
 ## Known Risks
 

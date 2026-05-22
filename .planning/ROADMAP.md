@@ -69,20 +69,20 @@ Goal: turn the legacy proxy scraper into a maintainable FastAPI service, then ad
 
 **Status:** Planned.
 
-**Problem:** The first modernization pass added coverage for core modules, but remaining edge cases are concentrated around integration behavior, scheduler lifecycle, API filtering combinations, and operational assumptions.
+**Problem:** The first modernization pass already covers scheduler refresh/error tracking, health reporting for scheduler errors, malformed and atomic storage behavior, and API filter interactions. Remaining gaps are concentrated around source freshness audit findings, checker endpoint behavior, protocol-specific connector behavior, dependency cleanup, and operational smoke coverage.
 
 **Actions:**
 
-- Add API filter combination tests for `prototypes`, `countrycodes`, `isanonymous`, and `maxtimeout` interactions.
-- Add scheduler tests for repeated refresh, cancellation, and last-error reporting.
-- Add storage tests for invalid JSON, partial structures, and atomic write replacement behavior.
-- Add Docker or command-level smoke checks where feasible in CI or local verification docs.
+- Add tests for any source parsing or config edge cases discovered during the source cleanup phase, without duplicating the existing extraction tests.
+- Add checker tests for configurable endpoint behavior, check response contract validation, throttled responses, malformed JSON, missing fields, and protocol-specific connector URL construction.
+- Add coverage for cleanup of transitional Flask/Waitress dependencies if they are removed, including import and entry-point checks that prove FastAPI/Uvicorn remains the active runtime path.
+- Add Docker or command-level smoke checks where feasible in CI or local verification docs, especially for `uv run proxy-pool-scrape`, `uv run uvicorn proxy_pool.app:app`, and image startup assumptions.
 - Track coverage by behavior rather than chasing a numeric threshold alone.
 
 **Acceptance checks:**
 
 - `uv run pytest` passes without live network dependency.
-- Tests fail deterministically when API filters, scheduler state, storage fallback, or checker parsing regress.
+- New tests fail deterministically when source audit assumptions, checker endpoint parsing, protocol connector construction, or runtime dependency cleanup regress.
 - Documentation lists the primary local verification commands for contributors.
 
 ### Phase 5: Operations
