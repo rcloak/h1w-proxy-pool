@@ -158,6 +158,39 @@ def test_root_rejects_infinite_minsuccessrate(tmp_path: Path):
     assert "minsuccessrate must be finite" in response.json()["detail"]
 
 
+def test_root_rejects_nan_maxtimeout(tmp_path: Path):
+    result_path = tmp_path / "proxies.json"
+    write_proxy_json(result_path, empty_proxy_json())
+
+    client = TestClient(create_app(result_path=result_path, start_scheduler=False))
+    response = client.get("/?maxtimeout=nan")
+
+    assert response.status_code == 422
+    assert "maxtimeout must be finite" in response.json()["detail"]
+
+
+def test_root_rejects_infinite_maxtimeout(tmp_path: Path):
+    result_path = tmp_path / "proxies.json"
+    write_proxy_json(result_path, empty_proxy_json())
+
+    client = TestClient(create_app(result_path=result_path, start_scheduler=False))
+    response = client.get("/?maxtimeout=inf")
+
+    assert response.status_code == 422
+    assert "maxtimeout must be finite" in response.json()["detail"]
+
+
+def test_root_rejects_negative_infinite_maxtimeout(tmp_path: Path):
+    result_path = tmp_path / "proxies.json"
+    write_proxy_json(result_path, empty_proxy_json())
+
+    client = TestClient(create_app(result_path=result_path, start_scheduler=False))
+    response = client.get("/?maxtimeout=-inf")
+
+    assert response.status_code == 422
+    assert "maxtimeout must be finite" in response.json()["detail"]
+
+
 def test_root_filters_by_supportshttps_false(tmp_path: Path):
     payload = empty_proxy_json()
     payload["http"] = [

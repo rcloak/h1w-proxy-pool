@@ -69,6 +69,7 @@ def root(
 ) -> ProxyJson | list[dict[str, Any]]:
     result_path: Path = request.app.state.result_path
     payload = read_proxy_json(result_path)
+    maxtimeout = _validate_finite_filter("maxtimeout", maxtimeout)
     minscore = _validate_finite_filter("minscore", minscore)
     minsuccessrate = _validate_finite_filter("minsuccessrate", minsuccessrate)
 
