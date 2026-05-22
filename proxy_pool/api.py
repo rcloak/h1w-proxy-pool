@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from fastapi import APIRouter, Request
+
+from proxy_pool.models import ProxyJson
+from proxy_pool.storage import read_proxy_json
+
+router = APIRouter()
+
+
+def flatten_proxy_json(payload: ProxyJson) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for prototype in ("http", "socks4", "socks5"):
+        for item in payload[prototype]:
+            rows.append({**item, "prototype": prototype})
+    return rows
+
+
+def apply_filters(
+    rows: list[dict[str, Any]],
+    prototypes: str | None,
+    countrycodes: str | None,
+    isanonymous: str | None,
+    maxtimeout: float | None,
+) -> list[dict[str, Any]]:
+    allowed_prototypes = _split_filter(prototypes)
+    allowed_countrycodes = _split_filter(countrycodes)
+    anonymous_filter = isanonymous.lower() if isanonymous is not None else None
+
+    filtered_rows: list[dict[str, Any]] = []
+    for row in rows:
+        if allowed_prototypes is not None and row["prototype"].lower() not in allowed_prototypes:
+            continue
+        if allowed_countrycodes is not None and row["countryCode"].lower() not in allowed_countrycodes:
+            continue
+        if anonymous_filter is not None and str(row["is_anonymous"]).lower() != anonymous_filter:
+            continue
+        if maxtimeout is not None and row["timeout"] > maxtimeout:
+            continue
+        filtered_rows.append(row)
+
+    return filtered_rows
+
+
+@router.get("/")
+def root(
+    request: Request,
+    prototypes: str | None = None,
+    countrycodes: str | None = None,
+    isanonymous: str | None = None,
+    maxtimeout: float | None = None,
+) -> ProxyJson | list[dict[str, Any]]:
+    result_path: Path = request.app.state.result_path
+    payload = read_proxy_json(result_path)
+
+    if prototypes is None and countrycodes is None and isanonymous is None and maxtimeout is None:
+        return payload
+
+    return apply_filters(flatten_proxy_json(payload), prototypes, countrycodes, isanonymous, maxtimeout)
+
+
+@router.get("/health")
+def health(request: Request) -> dict[str, object]:
+    result_path: Path = request.app.state.result_path
+    return {
+        "status": "ok",
+        "storage_path": str(result_path),
+        "storage_exists": result_path.exists(),
+    }
+
+
+def _split_filter(value: str | None) -> set[str] | None:
+    if value is None:
+        return None
+    return {item.strip().lower() for item in value.split(",") if item.strip()}
