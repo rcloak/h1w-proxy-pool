@@ -2,9 +2,33 @@
 
 The API is served by FastAPI from `proxy_pool.app:app`.
 
+The service has two related JSON shapes:
+
+- API list responses from `GET /` and `GET /proxies`: `{ "total": number, "items": [...] }`.
+- Storage file written on disk: `{ "version": 2, "generated_at": string, "total": number, "items": [...] }`.
+
+Clients should use the API shape unless they intentionally read the JSON file directly.
+
+## Base URL
+
+Local and Docker defaults use:
+
+```text
+http://localhost:5000
+```
+
+Useful commands:
+
+```sh
+curl http://localhost:5000/health
+curl http://localhost:5000/proxies
+curl 'http://localhost:5000/proxies?usable_as=https&min_score=80&limit=20'
+curl http://localhost:5000/stats
+```
+
 ## `GET /proxies`
 
-Returns the current v2 proxy list from the result JSON file. The response is always a list document with a `total` count and `items` array, including when filters are supplied. By default, items are returned in stored order: quality score descending, average latency ascending, then endpoint ascending.
+Returns the current v2 proxy list from the result JSON file. The response is always a list document with a `total` count and `items` array, including when filters are supplied. Items are sorted by quality score descending, average latency ascending, then endpoint ascending.
 
 Example response:
 
@@ -91,6 +115,19 @@ GET /proxies?source_protocol=http&usable_as=https&min_score=80&min_success_rate=
 | `anonymous` | string boolean | Filters by `network.anonymous`. Use `true` or `false`. |
 | `limit` | integer | Limits the number of returned items. Values must be positive and are capped at `1000`. |
 
+Example use cases:
+
+```sh
+# Best 50 HTTPS-capable proxies, regardless of source protocol.
+curl 'http://localhost:5000/proxies?usable_as=https&limit=50'
+
+# Strong HTTP source proxies that can also reach HTTPS destinations.
+curl 'http://localhost:5000/proxies?source_protocol=http&usable_as=https&min_score=80&min_success_rate=0.9'
+
+# Anonymous SOCKS5 proxies from the United States.
+curl 'http://localhost:5000/proxies?source_protocol=socks5&anonymous=true&country=US'
+```
+
 ## Proxy Item Fields
 
 Each item describes one checked proxy endpoint.
@@ -111,7 +148,9 @@ Each item describes one checked proxy endpoint.
 | `network.anonymous` | boolean | Whether a successful attempt observed an exit IP different from the candidate IP. |
 | `timestamps.checked_at` | string | UTC timestamp for the check cycle that produced the item. |
 
-`source_protocol` and `usable_as` are intentionally separate. A proxy may be discovered as a SOCKS5 proxy while still being usable for HTTP and HTTPS destinations through the SOCKS connector.
+`source_protocol` and `usable_as` are intentionally separate. `source_protocol` is how Proxy Pool connects to the proxy itself. `usable_as` is what destination protocol worked through that proxy during live checks. For example, a proxy can have `source_protocol: "socks5"` and `usable_as: ["http", "https"]`.
+
+Endpoint validation is strict `ip:port`. Ports must be decimal digits in the `1` to `65535` range.
 
 ## `GET /stats`
 
@@ -136,11 +175,36 @@ Example response:
     "finished_at": "2026-05-22T12:00:05+00:00",
     "duration_seconds": 5.0,
     "proxies_alive": 2
+  },
+  "current_refresh": {
+    "status": "running",
+    "started_at": "2026-05-22T12:05:00+00:00",
+    "finished_at": null,
+    "checked": 120,
+    "total": 500,
+    "alive": 18,
+    "current_protocol": "http"
   }
 }
 ```
 
 If no scheduler refresh metadata exists yet, `last_refresh.started_at`, `last_refresh.finished_at`, and `last_refresh.duration_seconds` are `null`, and `last_refresh.proxies_alive` is `0`.
+
+`last_refresh` is process memory, not data loaded from the JSON file. After a restart it starts empty until the scheduler completes a refresh.
+
+`current_refresh` reports the in-progress refresh state. When no refresh is running, it has this idle shape: `status: "idle"`, `started_at: null`, `finished_at: null`, `checked: 0`, `total: 0`, `alive: 0`, and `current_protocol: null`.
+
+`current_refresh` fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `status` | string | `idle`, `running`, or the latest scheduler-provided refresh status. |
+| `started_at` | string or null | UTC timestamp when the current refresh started. |
+| `finished_at` | string or null | UTC timestamp when the current refresh finished, or `null` while running or idle. |
+| `checked` | integer | Number of candidate proxies checked so far. |
+| `total` | integer | Total candidate proxies expected in the current refresh. |
+| `alive` | integer | Number of verified proxies found so far in the current refresh. |
+| `current_protocol` | string or null | Source protocol currently being checked, or `null` when idle. |
 
 ## `GET /health`
 
@@ -154,7 +218,8 @@ Example response from the API service:
   "storage_path": "/app/data/proxies.json",
   "storage_exists": true,
   "scheduler_running": true,
-  "last_scheduler_error": null
+  "last_scheduler_error": null,
+  "refresh_running": true
 }
 ```
 
@@ -167,5 +232,13 @@ Fields:
 | `storage_exists` | boolean | Whether the result JSON file currently exists. |
 | `scheduler_running` | boolean | Present when scheduler state exists. `true` means the scheduler task exists and has not finished. |
 | `last_scheduler_error` | string or null | Present when scheduler error tracking exists. Contains the most recent scheduler exception message, or `null`. |
+| `refresh_running` | boolean | Present when refresh progress state exists. `true` means `current_refresh.status` is `running`. |
 
 When the app is created with `start_scheduler=False`, `scheduler_running` may be `false` and `last_scheduler_error` may be absent unless the app lifespan has initialized scheduler state.
+
+## OpenAPI
+
+FastAPI also exposes generated documentation when the service is running:
+
+- Swagger UI: `http://localhost:5000/docs`
+- OpenAPI JSON: `http://localhost:5000/openapi.json`

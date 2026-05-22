@@ -20,6 +20,15 @@ For local development, make sure `[General] SavePath` points to a writable direc
 
 Live checker results depend on the configured `[Checker]` endpoints and on public proxy behavior at the time of the run. Endpoint rate limits, blocked public IP APIs, transparent proxies, unstable proxy nodes, and regional network failures can all change proxy yield without a code or configuration change.
 
+Common local API calls:
+
+```sh
+curl http://localhost:5000/health
+curl http://localhost:5000/proxies
+curl 'http://localhost:5000/proxies?usable_as=https&min_score=80&limit=20'
+curl http://localhost:5000/stats
+```
+
 ## One-Off Refresh
 
 Run a single scrape/check cycle and exit:
@@ -29,6 +38,17 @@ uv run proxy-pool-scrape
 ```
 
 This uses the same `config.ini` settings as the API service and writes to `SavePath / JsonResultFilename`.
+
+After it finishes, start the API or inspect the JSON file directly. The file shape includes storage metadata:
+
+```json
+{
+  "version": 2,
+  "generated_at": "2026-05-22T12:00:00Z",
+  "total": 0,
+  "items": []
+}
+```
 
 ## Docker
 
@@ -83,6 +103,8 @@ Useful fields:
 - `scheduler_running` tells whether the background scheduler task is active.
 - `last_scheduler_error` contains the last recorded scheduler failure message, or `null`.
 
+FastAPI's generated docs are available at `http://localhost:5000/docs` when the service is running.
+
 ## Troubleshooting
 
 If `GET /` returns an empty proxy document:
@@ -95,8 +117,17 @@ If `GET /` returns an empty proxy document:
 - Check that `[Checker] Endpoints` are reachable from the host and are not rate-limiting requests.
 - Check whether public proxies are failing the configured `RequiredSuccesses` or `MinSuccessRate` thresholds.
 - Lower `MaxConnections` if the host is resource constrained.
+- Remember that public proxy lists are noisy; an empty verified pool can be a real live-check result.
 
 The result file should be a v2 document with `version`, `generated_at`, `total`, and `items`. Each item records `endpoint`, `source_protocol`, `usable_as`, `quality`, `network`, and `timestamps`.
+
+During a long refresh, inspect progress with:
+
+```sh
+curl http://localhost:5000/stats
+```
+
+`current_refresh.checked` should increase as batches complete. `GET /proxies` reads the latest verified result file, so its `total` can grow before the refresh finishes and before `current_refresh.status` returns to `idle`.
 
 If the scheduler is not running:
 

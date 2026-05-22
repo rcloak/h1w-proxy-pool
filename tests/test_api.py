@@ -231,6 +231,25 @@ def test_stats_returns_v2_counts_and_default_refresh_info(tmp_path: Path):
     }
 
 
+def test_stats_includes_idle_current_refresh(tmp_path: Path):
+    path = tmp_path / "proxies.json"
+    write_document(path, [])
+    client = TestClient(create_app(result_path=path, start_scheduler=False))
+
+    response = client.get("/stats")
+
+    assert response.status_code == 200
+    assert response.json()["current_refresh"] == {
+        "status": "idle",
+        "started_at": None,
+        "finished_at": None,
+        "checked": 0,
+        "total": 0,
+        "alive": 0,
+        "current_protocol": None,
+    }
+
+
 def test_stats_returns_last_refresh_from_app_state(tmp_path: Path):
     path = tmp_path / "proxies.json"
     write_document(path, [make_proxy_item("1.1.1.1:80")])
@@ -262,6 +281,25 @@ def test_health_reports_storage_status(tmp_path: Path):
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["storage_exists"] is False
+
+
+def test_health_reports_refresh_running(tmp_path: Path):
+    app = create_app(result_path=tmp_path / "missing.json", start_scheduler=False)
+    app.state.current_refresh = {
+        "status": "running",
+        "started_at": "2026-05-22T12:00:00+00:00",
+        "finished_at": None,
+        "checked": 5,
+        "total": 20,
+        "alive": 2,
+        "current_protocol": "http",
+    }
+    client = TestClient(app)
+
+    response = client.get("/health")
+
+    assert response.status_code == 200
+    assert response.json()["refresh_running"] is True
 
 
 def test_app_factory_importable_without_config_in_cwd(tmp_path: Path, monkeypatch: Any):
