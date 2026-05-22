@@ -46,24 +46,30 @@ Goal: turn the legacy proxy scraper into a maintainable FastAPI service, then ad
 
 ### Phase 3: Checker Correctness
 
-**Status:** Planned.
+**Status:** Complete.
 
-**Problem:** Checker results depend on a single public IP API and shared protocol handling. That creates rate-limit risk and can hide protocol-specific failures.
+**Problem:** Checker results depended on a single public IP API and shared protocol handling. That created rate-limit risk and could hide protocol-specific failures.
 
-**Actions:**
+**Completed scope:**
 
-- Add a configurable check endpoint instead of hard-coding only `http://ip-api.com/json/?fields=8219`.
-- Define the required check response contract for query IP and country code fields.
-- Add protocol-specific checker tests for HTTP, SOCKS4, and SOCKS5 connector URL construction and failure handling.
-- Handle check endpoint throttling, malformed JSON, missing fields, and timeout errors explicitly in tests.
-- Consider lightweight fallback endpoint support only if it can be tested without live network calls.
+- Added configurable `[Checker]` endpoints with defaults for multiple public IP APIs.
+- Added repeated HTTP and HTTPS capability attempts per candidate.
+- Defined response parsing for `query`, `origin`, or `ip` plus optional `countryCode`.
+- Aggregated attempt results into success rate, counts, protocol support, average timeout, latest error, and checked timestamp.
+- Added score-based quality sorting and API filters for `minscore`, `supportshttps`, and `minsuccessrate`, including rejection of non-finite numeric filters.
+- Added deterministic tests for checker helpers, endpoint planning, protocol connector construction, failure handling, quality JSON compatibility, and API quality filters.
 
 **Acceptance checks:**
 
 - Checker tests verify anonymous versus transparent proxy classification.
 - Checker tests verify each protocol uses the correct proxy URL scheme.
-- Timeout, throttling, malformed JSON, and missing-field cases return no checked proxy without aborting the pipeline.
-- Configuration documents the selected check endpoint and expected response shape.
+- Timeout, malformed JSON, missing-field, and request failure cases return no checked proxy without aborting the pipeline.
+- Configuration documents the selected check endpoints and expected response shape.
+
+**Future follow-up:**
+
+- Track long-term per-proxy quality history across refreshes if persistent trend data becomes necessary.
+- Add source reputation metrics so operators can identify source URLs that consistently provide high-quality or low-quality candidates.
 
 ### Phase 4: Test Coverage
 

@@ -16,7 +16,16 @@ Example response:
       "address": "1.2.3.4:8080",
       "countryCode": "US",
       "is_anonymous": true,
-      "timeout": 0.42
+      "timeout": 0.42,
+      "score": 92.5,
+      "success_rate": 1.0,
+      "success_count": 4,
+      "failure_count": 0,
+      "supports_http": true,
+      "supports_https": true,
+      "avg_timeout": 0.42,
+      "last_error": null,
+      "checked_at": "2026-05-22T12:00:00Z"
     }
   ],
   "socks4": [],
@@ -25,7 +34,16 @@ Example response:
       "address": "5.6.7.8:1080",
       "countryCode": "DE",
       "is_anonymous": false,
-      "timeout": 1.2
+      "timeout": 1.2,
+      "score": 58.0,
+      "success_rate": 0.75,
+      "success_count": 3,
+      "failure_count": 1,
+      "supports_http": true,
+      "supports_https": false,
+      "avg_timeout": 1.2,
+      "last_error": "TimeoutError",
+      "checked_at": "2026-05-22T12:00:00Z"
     }
   ]
 }
@@ -49,7 +67,7 @@ When any supported query parameter is present, `GET /` returns a flattened list 
 Example:
 
 ```http
-GET /?prototypes=http,socks5&countrycodes=us&isanonymous=true&maxtimeout=0.5
+GET /?prototypes=http,socks5&countrycodes=us&isanonymous=true&maxtimeout=0.5&minscore=80&supportshttps=true&minsuccessrate=0.9
 ```
 
 Example response:
@@ -61,10 +79,35 @@ Example response:
     "countryCode": "US",
     "is_anonymous": true,
     "timeout": 0.42,
+    "score": 92.5,
+    "success_rate": 1.0,
+    "success_count": 4,
+    "failure_count": 0,
+    "supports_http": true,
+    "supports_https": true,
+    "avg_timeout": 0.42,
+    "last_error": null,
+    "checked_at": "2026-05-22T12:00:00Z",
     "prototype": "http"
   }
 ]
 ```
+
+## Proxy Quality Fields
+
+Checked proxy rows include the legacy fields plus quality metadata:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `score` | float | Quality score from `0.0` to `100.0`, based on success rate, HTTPS support, anonymity, and latency. |
+| `success_rate` | float | Successful attempts divided by total attempts, from `0.0` to `1.0`. |
+| `success_count` | integer | Number of successful endpoint attempts. |
+| `failure_count` | integer | Number of failed endpoint attempts. |
+| `supports_http` | boolean | Whether at least one HTTP endpoint attempt succeeded. |
+| `supports_https` | boolean | Whether at least one HTTPS endpoint attempt succeeded. |
+| `avg_timeout` | float | Average timeout in seconds across successful attempts. |
+| `last_error` | string or null | Most recent failed attempt error class or checker error message, when any attempt failed. |
+| `checked_at` | string | UTC timestamp for the check cycle that produced the row. |
 
 ## Query Parameters
 
@@ -74,6 +117,9 @@ Example response:
 | `countrycodes` | comma-separated string | Filters by `countryCode`, case-insensitively. |
 | `isanonymous` | string boolean | Filters by `is_anonymous`. Use `true` or `false`. |
 | `maxtimeout` | float | Keeps proxies whose `timeout` is less than or equal to the supplied value. |
+| `minscore` | float | Keeps proxies whose `score` is greater than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
+| `supportshttps` | string boolean | Filters by `supports_https`. Use `true` or `false`. |
+| `minsuccessrate` | float | Keeps proxies whose `success_rate` is greater than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
 
 Filters are combined with AND semantics.
 

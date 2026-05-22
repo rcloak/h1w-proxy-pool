@@ -18,6 +18,8 @@ The scheduler runs one scrape/check cycle, writes the result JSON, waits `Refres
 
 For local development, make sure `[General] SavePath` points to a writable directory. Leaving `SavePath` empty writes `JsonResultFilename` next to `config.ini`.
 
+Live checker results depend on the configured `[Checker]` endpoints and on public proxy behavior at the time of the run. Endpoint rate limits, blocked public IP APIs, transparent proxies, unstable proxy nodes, and regional network failures can all change proxy yield without a code or configuration change.
+
 ## One-Off Refresh
 
 Run a single scrape/check cycle and exit:
@@ -89,6 +91,8 @@ If `GET /` returns an empty proxy document:
 - Confirm `storage_exists` is `true`; the first refresh may still be running.
 - Run `uv run proxy-pool-scrape` once and watch for errors.
 - Check that source sections are enabled and have URLs.
+- Check that `[Checker] Endpoints` are reachable from the host and are not rate-limiting requests.
+- Check whether public proxies are failing the configured `RequiredSuccesses` or `MinSuccessRate` thresholds.
 - Lower `MaxConnections` if the host is resource constrained.
 
 If the scheduler is not running:
