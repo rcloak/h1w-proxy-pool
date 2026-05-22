@@ -7,6 +7,23 @@ from pathlib import Path
 from proxy_pool.models import Protocol
 
 
+DEFAULT_CHECK_ENDPOINTS = (
+    "http://httpbin.org/ip",
+    "https://api.ipify.org?format=json",
+    "http://ip-api.com/json/?fields=8219",
+)
+
+
+@dataclass(frozen=True, slots=True)
+class CheckerSettings:
+    endpoints: tuple[str, ...]
+    attempts_per_proxy: int
+    required_successes: int
+    check_http: bool
+    check_https: bool
+    min_success_rate: float
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     config_path: Path
@@ -18,6 +35,7 @@ class Settings:
     save_format: str
     refresh_interval_seconds: int
     sources: dict[Protocol, tuple[str, ...]]
+    checker: CheckerSettings
 
     @property
     def result_path(self) -> Path:
@@ -46,6 +64,7 @@ def load_config(path: str | Path = "config.ini") -> Settings:
         save_format=general.get("SaveFormat", fallback="json"),
         refresh_interval_seconds=general.getint("RefreshIntervalSeconds", fallback=900),
         sources=_load_sources(parser),
+        checker=_load_checker_settings(parser),
     )
 
 
@@ -67,3 +86,29 @@ def _load_sources(parser: ConfigParser) -> dict[Protocol, tuple[str, ...]]:
             sources[protocol] = protocol_sources
 
     return sources
+
+
+def _load_checker_settings(parser: ConfigParser) -> CheckerSettings:
+    if parser.has_section("Checker"):
+        section = parser["Checker"]
+        endpoints = tuple(
+            line.strip() for line in section.get("Endpoints", "").splitlines() if line.strip()
+        )
+        if not endpoints:
+            endpoints = DEFAULT_CHECK_ENDPOINTS
+        return CheckerSettings(
+            endpoints=endpoints,
+            attempts_per_proxy=max(1, section.getint("AttemptsPerProxy", fallback=2)),
+            required_successes=max(1, section.getint("RequiredSuccesses", fallback=1)),
+            check_http=section.getboolean("CheckHttp", fallback=True),
+            check_https=section.getboolean("CheckHttps", fallback=True),
+            min_success_rate=min(1.0, max(0.0, section.getfloat("MinSuccessRate", fallback=0.5))),
+        )
+    return CheckerSettings(
+        endpoints=DEFAULT_CHECK_ENDPOINTS,
+        attempts_per_proxy=2,
+        required_successes=1,
+        check_http=True,
+        check_https=True,
+        min_success_rate=0.5,
+    )

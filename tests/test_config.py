@@ -190,3 +190,85 @@ def test_checked_proxy_to_json_maps_country_code_to_camel_case():
         "is_anonymous": True,
         "timeout": 0.42,
     }
+
+
+def test_load_config_reads_checker_settings(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+SavePath =
+
+[Folders]
+
+[HTTP]
+Enabled = no
+Sources =
+
+[SOCKS4]
+Enabled = no
+Sources =
+
+[SOCKS5]
+Enabled = no
+Sources =
+
+[Checker]
+Endpoints =
+    http://example.test/ip
+    https://example.test/ip
+AttemptsPerProxy = 3
+RequiredSuccesses = 2
+CheckHttp = no
+CheckHttps = yes
+MinSuccessRate = 0.75
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.checker.endpoints == ("http://example.test/ip", "https://example.test/ip")
+    assert settings.checker.attempts_per_proxy == 3
+    assert settings.checker.required_successes == 2
+    assert settings.checker.check_http is False
+    assert settings.checker.check_https is True
+    assert settings.checker.min_success_rate == 0.75
+
+
+def test_load_config_uses_checker_defaults_when_section_missing(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+SavePath =
+
+[Folders]
+
+[HTTP]
+Enabled = no
+Sources =
+
+[SOCKS4]
+Enabled = no
+Sources =
+
+[SOCKS5]
+Enabled = no
+Sources =
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.checker.endpoints == (
+        "http://httpbin.org/ip",
+        "https://api.ipify.org?format=json",
+        "http://ip-api.com/json/?fields=8219",
+    )
+    assert settings.checker.attempts_per_proxy == 2
+    assert settings.checker.required_successes == 1
+    assert settings.checker.check_http is True
+    assert settings.checker.check_https is True
+    assert settings.checker.min_success_rate == 0.5
