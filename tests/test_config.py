@@ -1,0 +1,119 @@
+from pathlib import Path
+
+from proxy_pool.config import load_config
+from proxy_pool.models import CheckedProxy, checked_proxy_to_json, empty_proxy_json
+
+
+def test_load_config_reads_general_settings(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+Timeout = 7
+MaxConnections = 25
+SortBySpeed = no
+SavePath =
+JsonResultFilename = proxies.json
+SaveFormat = json
+RefreshIntervalSeconds = 30
+
+[Folders]
+proxies = yes
+proxies_anonymous = no
+proxies_geolocation = no
+proxies_geolocation_anonymous = no
+
+[HTTP]
+Enabled = yes
+Sources =
+    https://example.test/http.txt
+
+[SOCKS4]
+Enabled = no
+Sources =
+    https://example.test/socks4.txt
+
+[SOCKS5]
+Enabled = yes
+Sources =
+    https://example.test/socks5.txt
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.timeout == 7
+    assert settings.max_connections == 25
+    assert settings.sort_by_speed is False
+    assert settings.save_path == tmp_path
+    assert settings.json_result_filename == "proxies.json"
+    assert settings.refresh_interval_seconds == 30
+    assert settings.sources == {
+        "http": ("https://example.test/http.txt",),
+        "socks5": ("https://example.test/socks5.txt",),
+    }
+
+
+def test_load_config_defaults_refresh_interval(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+Timeout = 10
+MaxConnections = 800
+SortBySpeed = yes
+SavePath = /app
+JsonResultFilename = proxies.json
+SaveFormat = json
+
+[Folders]
+proxies = yes
+proxies_anonymous = yes
+proxies_geolocation = yes
+proxies_geolocation_anonymous = yes
+
+[HTTP]
+Enabled = no
+Sources =
+
+[SOCKS4]
+Enabled = no
+Sources =
+
+[SOCKS5]
+Enabled = no
+Sources =
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.refresh_interval_seconds == 900
+    assert settings.result_path == Path("/app/proxies.json")
+
+
+def test_empty_proxy_json_returns_empty_schema():
+    assert empty_proxy_json() == {
+        "total_count_of_proxies": 0,
+        "http": [],
+        "socks4": [],
+        "socks5": [],
+    }
+
+
+def test_checked_proxy_to_json_maps_country_code_to_camel_case():
+    proxy = CheckedProxy(
+        address="1.2.3.4:8080",
+        country_code="US",
+        is_anonymous=True,
+        timeout=0.42,
+    )
+
+    assert checked_proxy_to_json(proxy) == {
+        "address": "1.2.3.4:8080",
+        "countryCode": "US",
+        "is_anonymous": True,
+        "timeout": 0.42,
+    }
