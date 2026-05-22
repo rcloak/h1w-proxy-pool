@@ -245,11 +245,18 @@ def _checked_proxy_from_response(
 
 def sort_checked(proxies: Iterable[CheckedProxy], sort_by_speed: bool) -> list[CheckedProxy]:
     if sort_by_speed:
-        return sorted(proxies, key=lambda proxy: proxy.timeout)
+        return sorted(
+            proxies,
+            key=lambda proxy: (-proxy.score, proxy.avg_timeout or proxy.timeout, _natural_address_key(proxy.address)),
+        )
     return sorted(
         proxies,
-        key=lambda proxy: tuple(map(int, proxy.address.replace(":", ".").split("."))),
+        key=lambda proxy: _natural_address_key(proxy.address),
     )
+
+
+def _natural_address_key(address: str) -> tuple[int, ...]:
+    return tuple(map(int, address.replace(":", ".").split(".")))
 
 
 def build_proxy_json(proxies: Mapping[Protocol, Iterable[CheckedProxy]]) -> ProxyJson:

@@ -27,6 +27,20 @@ def test_sort_checked_sorts_by_timeout():
     assert result == [fast, slow]
 
 
+def test_sort_checked_prefers_score_then_timeout_then_address():
+    proxies = [
+        CheckedProxy(address="2.2.2.2:80", country_code="US", is_anonymous=True, timeout=0.1, score=90.0, avg_timeout=0.1),
+        CheckedProxy(address="1.1.1.1:80", country_code="US", is_anonymous=True, timeout=0.2, score=95.0, avg_timeout=0.2),
+        CheckedProxy(address="3.3.3.3:80", country_code="US", is_anonymous=True, timeout=0.3, score=90.0, avg_timeout=0.3),
+    ]
+
+    assert [proxy.address for proxy in sort_checked(proxies, sort_by_speed=True)] == [
+        "1.1.1.1:80",
+        "2.2.2.2:80",
+        "3.3.3.3:80",
+    ]
+
+
 def test_sort_checked_sorts_by_natural_address():
     high_port = CheckedProxy(address="1.2.3.4:100", country_code="US", is_anonymous=True, timeout=0.1)
     later_ip = CheckedProxy(address="1.2.3.10:80", country_code="US", is_anonymous=True, timeout=0.1)
