@@ -192,19 +192,24 @@ If no scheduler refresh metadata exists yet, `last_refresh.started_at`, `last_re
 
 `last_refresh` is process memory, not data loaded from the JSON file. After a restart it starts empty until the scheduler completes a refresh.
 
-`current_refresh` reports the in-progress refresh state. When no refresh is running, it has this idle shape: `status: "idle"`, `started_at: null`, `finished_at: null`, `checked: 0`, `total: 0`, `alive: 0`, and `current_protocol: null`.
+`current_refresh` reports refresh progress state:
+
+- Initial idle before any refresh: `status: "idle"`, `started_at: null`, `finished_at: null`, `checked: 0`, `total: 0`, `alive: 0`, and `current_protocol: null`.
+- Running refresh: `status: "running"`; `checked`, `total`, and `alive` advance as batches complete; `finished_at` remains `null`.
+- Completed refresh: `status: "idle"` with final `checked`, `total`, and `alive` counts preserved, `finished_at` set, and `current_protocol: null`.
+- Failed refresh: `status: "failed"` with last known `checked`, `total`, and `alive` counts preserved and `finished_at` set.
 
 `current_refresh` fields:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `status` | string | `idle`, `running`, or the latest scheduler-provided refresh status. |
+| `status` | string | Refresh state: `idle`, `running`, or `failed`. |
 | `started_at` | string or null | UTC timestamp when the current refresh started. |
-| `finished_at` | string or null | UTC timestamp when the current refresh finished, or `null` while running or idle. |
-| `checked` | integer | Number of candidate proxies checked so far. |
-| `total` | integer | Total candidate proxies expected in the current refresh. |
-| `alive` | integer | Number of verified proxies found so far in the current refresh. |
-| `current_protocol` | string or null | Source protocol currently being checked, or `null` when idle. |
+| `finished_at` | string or null | UTC timestamp when the refresh completed or failed. `null` before the first terminal state and while running. |
+| `checked` | integer | Number of candidate proxies checked so far, or the final checked count after completion/failure. |
+| `total` | integer | Total candidate proxies expected in the current refresh, or the final total after completion/failure. |
+| `alive` | integer | Number of verified proxies found so far, or the final alive count after completion/failure. |
+| `current_protocol` | string or null | Source protocol currently being checked, last known protocol after failure, or `null` when initially idle or after successful completion. |
 
 ## `GET /health`
 
