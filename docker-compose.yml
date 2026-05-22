@@ -1,0 +1,11 @@
+services:
+  proxy-pool:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - proxy-pool-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  proxy-pool-data:

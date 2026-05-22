@@ -1,13 +1,25 @@
-FROM python:3.10
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_SYSTEM_PYTHON=1
 
 WORKDIR /app
 
-COPY . /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && curl -LsSf https://astral.sh/uv/install.sh | sh
 
-RUN chmod +x scrap_proxies.py
+ENV PATH="/root/.local/bin:$PATH"
 
-RUN pip3 install -r requirements.txt
+COPY pyproject.toml uv.lock README.md /app/
+COPY proxy_pool /app/proxy_pool
+COPY config.ini /app/config.ini
+COPY scrap_proxies.py web_server.py /app/
 
-ENTRYPOINT [ "python3" ]
+RUN uv sync --frozen --no-dev
 
-CMD [ "web_server.py" ]
+EXPOSE 5000
+
+CMD ["uv", "run", "uvicorn", "proxy_pool.app:app", "--host", "0.0.0.0", "--port", "5000"]
