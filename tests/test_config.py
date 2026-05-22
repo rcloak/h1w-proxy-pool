@@ -195,10 +195,41 @@ def test_checked_proxy_to_json_maps_country_code_to_camel_case():
         "failure_count": 0,
         "supports_http": False,
         "supports_https": False,
-        "avg_timeout": 0.0,
+        "avg_timeout": 0.42,
         "last_error": None,
         "checked_at": "",
     }
+
+
+def test_checked_proxy_to_json_defaults_avg_timeout_to_timeout():
+    item = checked_proxy_to_json(
+        CheckedProxy(
+            address="1.2.3.4:80",
+            country_code="US",
+            is_anonymous=True,
+            timeout=0.5,
+        )
+    )
+
+    assert item["avg_timeout"] == 0.5
+
+
+def test_checked_proxy_to_json_uses_defaults_for_non_finite_quality_floats():
+    item = checked_proxy_to_json(
+        CheckedProxy(
+            address="1.2.3.4:80",
+            country_code="US",
+            is_anonymous=True,
+            timeout=0.5,
+            score=float("inf"),
+            success_rate=float("nan"),
+            avg_timeout=float("inf"),
+        )
+    )
+
+    assert item["score"] == 0.0
+    assert item["success_rate"] == 0.0
+    assert item["avg_timeout"] == 0.5
 
 
 def test_checked_proxy_to_json_includes_quality_fields():

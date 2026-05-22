@@ -81,7 +81,7 @@ def test_build_proxy_json_preserves_schema_and_counts():
             "failure_count": 0,
             "supports_http": False,
             "supports_https": False,
-            "avg_timeout": 0.0,
+            "avg_timeout": 0.2,
             "last_error": None,
             "checked_at": "",
         }
@@ -99,7 +99,7 @@ def test_build_proxy_json_preserves_schema_and_counts():
             "failure_count": 0,
             "supports_http": False,
             "supports_https": False,
-            "avg_timeout": 0.0,
+            "avg_timeout": 1.1,
             "last_error": None,
             "checked_at": "",
         }

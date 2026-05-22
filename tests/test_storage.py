@@ -90,6 +90,38 @@ def test_read_proxy_json_accepts_legacy_items_without_quality_fields(tmp_path: P
     assert item["checked_at"] == ""
 
 
+def test_read_proxy_json_clamps_quality_metric_ranges(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        '{"http": [{"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": true, "timeout": 0.5, "score": -10, "success_rate": -1}, {"address": "2.2.2.2:80", "countryCode": "US", "is_anonymous": true, "timeout": 0.7, "score": 999, "success_rate": 2}], "socks4": [], "socks5": []}',
+        encoding="utf-8",
+    )
+
+    result = read_proxy_json(target)
+
+    low_item = result["http"][0]
+    high_item = result["http"][1]
+    assert low_item["score"] == 0.0
+    assert low_item["success_rate"] == 0.0
+    assert high_item["score"] == 100.0
+    assert high_item["success_rate"] == 1.0
+
+
+def test_read_proxy_json_uses_defaults_for_non_finite_quality_floats(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        '{"http": [{"address": "1.2.3.4:80", "countryCode": "US", "is_anonymous": true, "timeout": 0.5, "score": Infinity, "success_rate": NaN, "avg_timeout": Infinity}], "socks4": [], "socks5": []}',
+        encoding="utf-8",
+    )
+
+    result = read_proxy_json(target)
+
+    item = result["http"][0]
+    assert item["score"] == 0.0
+    assert item["success_rate"] == 0.0
+    assert item["avg_timeout"] == 0.5
+
+
 def test_write_proxy_json_writes_schema_atomically(tmp_path: Path):
     target = tmp_path / "proxies.json"
     payload = empty_proxy_json()

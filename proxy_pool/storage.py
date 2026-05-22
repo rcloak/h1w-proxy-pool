@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+from math import isfinite
 from pathlib import Path
 from typing import Any, cast
 
@@ -61,8 +62,8 @@ def _normalize_proxy_item(item: object) -> ProxyJsonItem | None:
         "countryCode": country_code,
         "is_anonymous": is_anonymous,
         "timeout": timeout_float,
-        "score": _number(item.get("score"), 0.0),
-        "success_rate": _number(item.get("success_rate"), 0.0),
+        "score": _number(item.get("score"), 0.0, minimum=0.0, maximum=100.0),
+        "success_rate": _number(item.get("success_rate"), 0.0, minimum=0.0, maximum=1.0),
         "success_count": _int(item.get("success_count"), 0),
         "failure_count": _int(item.get("failure_count"), 0),
         "supports_http": supports_http if isinstance(supports_http, bool) else False,
@@ -73,10 +74,17 @@ def _normalize_proxy_item(item: object) -> ProxyJsonItem | None:
     }
 
 
-def _number(value: object, default: float) -> float:
+def _number(value: object, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return default
-    return float(value)
+    result = float(value)
+    if not isfinite(result):
+        return default
+    if minimum is not None:
+        result = max(minimum, result)
+    if maximum is not None:
+        result = min(maximum, result)
+    return result
 
 
 def _int(value: object, default: int) -> int:

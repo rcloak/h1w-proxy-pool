@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Literal, TypedDict
 
 
@@ -68,13 +69,23 @@ def checked_proxy_to_json(proxy: CheckedProxy) -> ProxyJsonItem:
         "countryCode": proxy.country_code,
         "is_anonymous": proxy.is_anonymous,
         "timeout": proxy.timeout,
-        "score": proxy.score,
-        "success_rate": proxy.success_rate,
+        "score": _clamp_float(proxy.score, 0.0, 100.0, 0.0),
+        "success_rate": _clamp_float(proxy.success_rate, 0.0, 1.0, 0.0),
         "success_count": proxy.success_count,
         "failure_count": proxy.failure_count,
         "supports_http": proxy.supports_http,
         "supports_https": proxy.supports_https,
-        "avg_timeout": proxy.avg_timeout,
+        "avg_timeout": _finite_float(proxy.avg_timeout or proxy.timeout, proxy.timeout),
         "last_error": proxy.last_error,
         "checked_at": proxy.checked_at,
     }
+
+
+def _finite_float(value: float, default: float) -> float:
+    return value if isfinite(value) else default
+
+
+def _clamp_float(value: float, minimum: float, maximum: float, default: float) -> float:
+    if not isfinite(value):
+        return default
+    return min(maximum, max(minimum, value))
