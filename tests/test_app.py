@@ -188,14 +188,14 @@ async def test_scheduler_forwards_refresh_progress(monkeypatch, tmp_path: Path):
                     "status": "running",
                     "started_at": "2026-05-22T12:00:00+00:00",
                     "finished_at": None,
-                    "checked": 1,
-                    "total": 2,
-                    "alive": 1,
+                    "checked": 10,
+                    "total": 100,
+                    "alive": 3,
                     "current_protocol": "http",
                 }
             )
         stop_event.set()
-        return {"version": 2, "generated_at": "2026-05-22T12:00:00Z", "total": 1, "items": []}
+        return {"version": 2, "generated_at": "2026-05-22T12:00:00Z", "total": 3, "items": []}
 
     monkeypatch.setattr(scheduler_module, "run_pipeline", run_pipeline)
 
@@ -209,15 +209,63 @@ async def test_scheduler_forwards_refresh_progress(monkeypatch, tmp_path: Path):
         "status": "running",
         "started_at": "2026-05-22T12:00:00+00:00",
         "finished_at": None,
-        "checked": 1,
-        "total": 2,
-        "alive": 1,
+        "checked": 10,
+        "total": 100,
+        "alive": 3,
         "current_protocol": "http",
     }
     assert progress_updates[1]["status"] == "idle"
-    assert progress_updates[1]["checked"] == 1
-    assert progress_updates[1]["total"] == 1
-    assert progress_updates[1]["alive"] == 1
+    assert progress_updates[1]["finished_at"] is not None
+    assert progress_updates[1]["checked"] == 10
+    assert progress_updates[1]["total"] == 100
+    assert progress_updates[1]["alive"] == 3
+    assert progress_updates[1]["current_protocol"] is None
+
+
+async def test_scheduler_preserves_refresh_progress_on_error(monkeypatch, tmp_path: Path):
+    settings = make_settings(tmp_path, refresh_interval_seconds=60)
+    stop_event = scheduler_module.asyncio.Event()
+    progress_updates = []
+
+    async def run_pipeline(settings, on_progress=None):
+        stop_event.set()
+        if on_progress is not None:
+            on_progress(
+                {
+                    "status": "running",
+                    "started_at": "2026-05-22T12:00:00+00:00",
+                    "finished_at": None,
+                    "checked": 10,
+                    "total": 100,
+                    "alive": 3,
+                    "current_protocol": "http",
+                }
+            )
+        raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(scheduler_module, "run_pipeline", run_pipeline)
+
+    await scheduler_module.scheduler_loop(
+        settings,
+        stop_event,
+        on_progress=progress_updates.append,
+    )
+
+    assert progress_updates[0] == {
+        "status": "running",
+        "started_at": "2026-05-22T12:00:00+00:00",
+        "finished_at": None,
+        "checked": 10,
+        "total": 100,
+        "alive": 3,
+        "current_protocol": "http",
+    }
+    assert progress_updates[1]["status"] == "failed"
+    assert progress_updates[1]["finished_at"] is not None
+    assert progress_updates[1]["checked"] == 10
+    assert progress_updates[1]["total"] == 100
+    assert progress_updates[1]["alive"] == 3
+    assert progress_updates[1]["current_protocol"] == "http"
 
 
 def test_app_exposes_current_refresh_progress(monkeypatch, tmp_path: Path):
