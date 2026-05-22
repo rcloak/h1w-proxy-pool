@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 from proxy_pool.checker import (
     CheckAttempt,
@@ -9,10 +10,12 @@ from proxy_pool.checker import (
     check_candidate,
     endpoint_supports_capability,
     extract_observed_ip,
+    run_pipeline,
     sort_checked,
 )
-from proxy_pool.config import CheckerSettings
+from proxy_pool.config import DEFAULT_CHECK_ENDPOINTS, CheckerSettings, Settings
 from proxy_pool.models import CheckedProxy, ProxyCandidate
+from proxy_pool.storage import read_proxy_document
 
 
 def make_checked_proxy(
@@ -246,3 +249,119 @@ async def test_check_candidate_limits_concurrent_attempts_to_semaphore(monkeypat
 
     assert result is not None
     assert max_active_attempts == 2
+
+
+def make_settings(tmp_path: Path) -> Settings:
+    return Settings(
+        config_path=tmp_path / "config.ini",
+        timeout=1,
+        max_connections=2,
+        sort_by_speed=True,
+        save_path=tmp_path,
+        json_result_filename="proxies.json",
+        save_format="json",
+        refresh_interval_seconds=60,
+        sources={"http": ("https://example.test/http.txt",)},
+        checker=CheckerSettings(
+            endpoints=DEFAULT_CHECK_ENDPOINTS,
+            attempts_per_proxy=1,
+            required_successes=1,
+            check_http=True,
+            check_https=False,
+            min_success_rate=0.5,
+        ),
+    )
+
+
+async def test_run_pipeline_writes_partial_documents_after_each_batch(monkeypatch, tmp_path: Path):
+    settings = make_settings(tmp_path)
+    candidates = {
+        "http": {
+            ProxyCandidate(address="3.3.3.3:80", ip="3.3.3.3"),
+            ProxyCandidate(address="1.1.1.1:80", ip="1.1.1.1"),
+            ProxyCandidate(address="2.2.2.2:80", ip="2.2.2.2"),
+        }
+    }
+    writes: list[int] = []
+
+    async def fake_collect_candidates(sources):
+        return candidates
+
+    async def fake_check_candidate(candidate, protocol, timeout, semaphore, checker, checked_at):
+        if candidate.address == "2.2.2.2:80":
+            return None
+        return CheckedProxy(
+            endpoint=candidate.address,
+            source_protocol=protocol,
+            usable_as=("http",),
+            exit_ip="8.8.8.8",
+            country_code="US",
+            anonymous=True,
+            score=90.0,
+            success_rate=1.0,
+            checks_passed=1,
+            checks_failed=0,
+            avg_latency_ms=100,
+            last_error=None,
+            checked_at=checked_at,
+        )
+
+    def fake_write_proxy_document(path, payload):
+        writes.append(payload["total"])
+        from proxy_pool.storage import write_proxy_document as real_write_proxy_document
+
+        real_write_proxy_document(path, payload)
+
+    monkeypatch.setattr("proxy_pool.checker.collect_candidates", fake_collect_candidates)
+    monkeypatch.setattr("proxy_pool.checker.check_candidate", fake_check_candidate)
+    monkeypatch.setattr("proxy_pool.checker.write_proxy_document", fake_write_proxy_document)
+
+    payload = await run_pipeline(settings, batch_size=2)
+
+    assert writes == [1, 2]
+    assert payload["total"] == 2
+    assert read_proxy_document(settings.result_path)["total"] == 2
+
+
+async def test_run_pipeline_reports_progress_for_batches(monkeypatch, tmp_path: Path):
+    settings = make_settings(tmp_path)
+    candidates = {
+        "http": {
+            ProxyCandidate(address="3.3.3.3:80", ip="3.3.3.3"),
+            ProxyCandidate(address="1.1.1.1:80", ip="1.1.1.1"),
+            ProxyCandidate(address="2.2.2.2:80", ip="2.2.2.2"),
+        }
+    }
+    progress_updates = []
+
+    async def fake_collect_candidates(sources):
+        return candidates
+
+    async def fake_check_candidate(candidate, protocol, timeout, semaphore, checker, checked_at):
+        return CheckedProxy(
+            endpoint=candidate.address,
+            source_protocol=protocol,
+            usable_as=("http",),
+            exit_ip="8.8.8.8",
+            country_code="US",
+            anonymous=True,
+            score=90.0,
+            success_rate=1.0,
+            checks_passed=1,
+            checks_failed=0,
+            avg_latency_ms=100,
+            last_error=None,
+            checked_at=checked_at,
+        )
+
+    monkeypatch.setattr("proxy_pool.checker.collect_candidates", fake_collect_candidates)
+    monkeypatch.setattr("proxy_pool.checker.check_candidate", fake_check_candidate)
+
+    await run_pipeline(settings, progress_updates.append, batch_size=2)
+
+    assert progress_updates[0]["status"] == "running"
+    assert progress_updates[0]["checked"] == 0
+    assert progress_updates[0]["total"] == 3
+    assert [update["checked"] for update in progress_updates[1:]] == [2, 3]
+    assert progress_updates[-1]["alive"] == 3
+    assert progress_updates[-1]["current_protocol"] == "http"

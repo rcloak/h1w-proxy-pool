@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from ipaddress import ip_address
@@ -17,10 +17,15 @@ from proxy_pool.models import (
     Protocol,
     ProxyCandidate,
     ProxyDocument,
+    RefreshProgress,
     checked_proxy_to_item,
 )
 from proxy_pool.sources import collect_candidates
 from proxy_pool.storage import write_proxy_document
+
+DEFAULT_BATCH_SIZE = 500
+ProgressCallback = Callable[[RefreshProgress], None]
+
 
 @dataclass(frozen=True, slots=True)
 class PlannedAttempt:
@@ -248,31 +253,72 @@ def build_proxy_document(proxies: Iterable[CheckedProxy], generated_at: str) -> 
     return {"version": 2, "generated_at": generated_at, "total": len(items), "items": items}
 
 
-async def run_pipeline(settings: Settings) -> ProxyDocument:
+def _candidate_batches(candidates: Sequence[ProxyCandidate], batch_size: int) -> Iterable[Sequence[ProxyCandidate]]:
+    for index in range(0, len(candidates), batch_size):
+        yield candidates[index : index + batch_size]
+
+
+async def run_pipeline(
+    settings: Settings,
+    on_progress: ProgressCallback | None = None,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> ProxyDocument:
     candidates = await collect_candidates(settings.sources)
     semaphore = asyncio.Semaphore(settings.max_connections)
     checked: list[CheckedProxy] = []
     checked_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    started_at = datetime.now(UTC).isoformat()
+    total_candidates = sum(len(protocol_candidates) for protocol_candidates in candidates.values())
+    checked_count = 0
+    effective_batch_size = max(1, batch_size)
+    payload: ProxyDocument | None = None
+
+    def emit_progress(current_protocol: Protocol | None) -> None:
+        if on_progress is None:
+            return
+        on_progress(
+            {
+                "status": "running",
+                "started_at": started_at,
+                "finished_at": None,
+                "checked": checked_count,
+                "total": total_candidates,
+                "alive": len(checked),
+                "current_protocol": current_protocol,
+            }
+        )
+
+    emit_progress(None)
 
     for protocol, protocol_candidates in candidates.items():
-        results = await asyncio.gather(
-            *(
-                check_candidate(
-                    candidate,
-                    protocol,
-                    settings.timeout,
-                    semaphore,
-                    settings.checker,
-                    checked_at,
-                )
-                for candidate in protocol_candidates
-            )
+        ordered_candidates = sorted(
+            protocol_candidates,
+            key=lambda candidate: _natural_address_key(candidate.address),
         )
-        checked.extend(result for result in results if result is not None)
+        for batch in _candidate_batches(ordered_candidates, effective_batch_size):
+            results = await asyncio.gather(
+                *(
+                    check_candidate(
+                        candidate,
+                        protocol,
+                        settings.timeout,
+                        semaphore,
+                        settings.checker,
+                        checked_at,
+                    )
+                    for candidate in batch
+                )
+            )
+            checked.extend(result for result in results if result is not None)
+            checked_count += len(batch)
+            sorted_proxies = sort_checked(checked, settings.sort_by_speed)
+            payload = build_proxy_document(sorted_proxies, generated_at=checked_at)
+            write_proxy_document(settings.result_path, payload)
+            emit_progress(protocol)
 
-    sorted_proxies = sort_checked(checked, settings.sort_by_speed)
-    payload = build_proxy_document(sorted_proxies, generated_at=checked_at)
-    write_proxy_document(settings.result_path, payload)
+    if payload is None:
+        payload = build_proxy_document([], generated_at=checked_at)
+        write_proxy_document(settings.result_path, payload)
     return payload
 
 
