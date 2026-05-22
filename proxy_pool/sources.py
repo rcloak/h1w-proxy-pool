@@ -51,16 +51,15 @@ async def collect_candidates(
     results: dict[Protocol, set[ProxyCandidate]] = {protocol: set() for protocol in sources}
 
     async with ClientSession(headers={"User-Agent": USER_AGENT}) as session:
-        tasks = {
-            asyncio.create_task(fetch_source(session, url)): protocol
-            for protocol, urls in sources.items()
-            for url in urls
-        }
-        for task, protocol in tasks.items():
+        async def fetch_one(protocol: Protocol, url: str) -> None:
             try:
-                text = await task
+                text = await fetch_source(session, url)
             except Exception:
-                continue
+                return
             results[protocol].update(extract_proxy_candidates(text))
+
+        await asyncio.gather(
+            *(fetch_one(protocol, url) for protocol, urls in sources.items() for url in urls)
+        )
 
     return results
