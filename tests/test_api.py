@@ -1,3 +1,5 @@
+import importlib
+import sys
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -61,3 +63,17 @@ def test_health_reports_storage_status(tmp_path: Path):
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
     assert response.json()["storage_exists"] is False
+
+
+def test_app_factory_importable_without_config_in_cwd(tmp_path: Path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    sys.modules.pop("proxy_pool.app", None)
+
+    app_module = importlib.import_module("proxy_pool.app")
+    created_app = app_module.create_app(result_path=tmp_path / "proxies.json", start_scheduler=False)
+
+    assert app_module.app.title == "Proxy Pool"
+    assert app_module.app.state.result_path == Path("proxies.json")
+    assert app_module.app.state.start_scheduler is False
+    assert created_app.state.result_path == tmp_path / "proxies.json"
+    assert created_app.state.start_scheduler is False

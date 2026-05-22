@@ -25,7 +25,14 @@ def create_app(result_path: str | Path | None = None, start_scheduler: bool = Tr
     return app
 
 
-app = create_app()
+def _create_module_app() -> FastAPI:
+    try:
+        return create_app()
+    except FileNotFoundError:
+        return create_app(result_path=Path("proxies.json"), start_scheduler=False)
+
+
+app = _create_module_app()
 
 
 def main() -> None:
