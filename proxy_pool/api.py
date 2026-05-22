@@ -6,94 +6,86 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
-from proxy_pool.models import ProxyJson
-from proxy_pool.storage import read_proxy_json
+from proxy_pool.models import ProxyItem
+from proxy_pool.storage import read_proxy_document
 
 router = APIRouter()
-
-
-def flatten_proxy_json(payload: ProxyJson) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for prototype in ("http", "socks4", "socks5"):
-        for item in payload[prototype]:
-            rows.append({**item, "prototype": prototype})
-    return rows
-
-
-def apply_filters(
-    rows: list[dict[str, Any]],
-    prototypes: str | None,
-    countrycodes: str | None,
-    isanonymous: str | None,
-    maxtimeout: float | None,
-    minscore: float | None,
-    supportshttps: str | None,
-    minsuccessrate: float | None,
-) -> list[dict[str, Any]]:
-    allowed_prototypes = _split_filter(prototypes)
-    allowed_countrycodes = _split_filter(countrycodes)
-    anonymous_filter = isanonymous.lower() if isanonymous is not None else None
-    supports_https_filter = supportshttps.lower() if supportshttps is not None else None
-
-    filtered_rows: list[dict[str, Any]] = []
-    for row in rows:
-        if allowed_prototypes is not None and row["prototype"].lower() not in allowed_prototypes:
-            continue
-        if allowed_countrycodes is not None and row["countryCode"].lower() not in allowed_countrycodes:
-            continue
-        if anonymous_filter is not None and str(row["is_anonymous"]).lower() != anonymous_filter:
-            continue
-        if maxtimeout is not None and row["timeout"] > maxtimeout:
-            continue
-        if minscore is not None and float(row.get("score", 0.0)) < minscore:
-            continue
-        if minsuccessrate is not None and float(row.get("success_rate", 0.0)) < minsuccessrate:
-            continue
-        if supports_https_filter is not None and str(row.get("supports_https", False)).lower() != supports_https_filter:
-            continue
-        filtered_rows.append(row)
-
-    return filtered_rows
 
 
 @router.get("/")
 def root(
     request: Request,
-    prototypes: str | None = None,
-    countrycodes: str | None = None,
-    isanonymous: str | None = None,
-    maxtimeout: float | None = None,
-    minscore: float | None = None,
-    supportshttps: str | None = None,
-    minsuccessrate: float | None = None,
-) -> ProxyJson | list[dict[str, Any]]:
+    source_protocol: str | None = None,
+    usable_as: str | None = None,
+    min_score: float | None = None,
+    min_success_rate: float | None = None,
+    country: str | None = None,
+    anonymous: str | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
+    return proxies(request, source_protocol, usable_as, min_score, min_success_rate, country, anonymous, limit)
+
+
+@router.get("/proxies")
+def proxies(
+    request: Request,
+    source_protocol: str | None = None,
+    usable_as: str | None = None,
+    min_score: float | None = None,
+    min_success_rate: float | None = None,
+    country: str | None = None,
+    anonymous: str | None = None,
+    limit: int | None = None,
+) -> dict[str, Any]:
     result_path: Path = request.app.state.result_path
-    payload = read_proxy_json(result_path)
-    maxtimeout = _validate_finite_filter("maxtimeout", maxtimeout)
-    minscore = _validate_finite_filter("minscore", minscore)
-    minsuccessrate = _validate_finite_filter("minsuccessrate", minsuccessrate)
+    payload = read_proxy_document(result_path)
+    min_score = _validate_finite_filter("min_score", min_score)
+    min_success_rate = _validate_finite_filter("min_success_rate", min_success_rate)
+    limit = _validate_limit(limit)
 
-    if (
-        prototypes is None
-        and countrycodes is None
-        and isanonymous is None
-        and maxtimeout is None
-        and minscore is None
-        and supportshttps is None
-        and minsuccessrate is None
-    ):
-        return payload
-
-    return apply_filters(
-        flatten_proxy_json(payload),
-        prototypes,
-        countrycodes,
-        isanonymous,
-        maxtimeout,
-        minscore,
-        supportshttps,
-        minsuccessrate,
+    items = _apply_filters(
+        payload["items"],
+        source_protocol=source_protocol,
+        usable_as=usable_as,
+        min_score=min_score,
+        min_success_rate=min_success_rate,
+        country=country,
+        anonymous=anonymous,
     )
+    items.sort(key=lambda item: item["quality"]["score"], reverse=True)
+    if limit is not None:
+        items = items[:limit]
+    return {"total": len(items), "items": items}
+
+
+@router.get("/stats")
+def stats(request: Request) -> dict[str, Any]:
+    result_path: Path = request.app.state.result_path
+    payload = read_proxy_document(result_path)
+    by_source_protocol = {"http": 0, "socks4": 0, "socks5": 0}
+    by_capability = {"http": 0, "https": 0}
+
+    for item in payload["items"]:
+        by_source_protocol[item["source_protocol"]] += 1
+        for capability in item["usable_as"]:
+            by_capability[capability] += 1
+
+    last_refresh = getattr(request.app.state, "last_refresh", None)
+    if not isinstance(last_refresh, dict):
+        last_refresh = {
+            "generated_at": payload["generated_at"] or None,
+            "started_at": None,
+            "finished_at": None,
+            "duration_seconds": None,
+            "proxies_alive": payload["total"],
+        }
+
+    return {
+        "total": payload["total"],
+        "by_source_protocol": by_source_protocol,
+        "by_capability": by_capability,
+        "last_refresh": last_refresh,
+    }
 
 
 @router.get("/health")
@@ -112,13 +104,59 @@ def health(request: Request) -> dict[str, object]:
     return payload
 
 
-def _split_filter(value: str | None) -> set[str] | None:
+def _apply_filters(
+    items: list[ProxyItem],
+    *,
+    source_protocol: str | None,
+    usable_as: str | None,
+    min_score: float | None,
+    min_success_rate: float | None,
+    country: str | None,
+    anonymous: str | None,
+) -> list[ProxyItem]:
+    source_protocol_filter = source_protocol.lower() if source_protocol is not None else None
+    usable_as_filter = usable_as.lower() if usable_as is not None else None
+    country_filter = country.lower() if country is not None else None
+    anonymous_filter = _parse_bool_filter("anonymous", anonymous)
+
+    filtered_items: list[ProxyItem] = []
+    for item in items:
+        if source_protocol_filter is not None and item["source_protocol"].lower() != source_protocol_filter:
+            continue
+        if usable_as_filter is not None and usable_as_filter not in [capability.lower() for capability in item["usable_as"]]:
+            continue
+        if min_score is not None and item["quality"]["score"] < min_score:
+            continue
+        if min_success_rate is not None and item["quality"]["success_rate"] < min_success_rate:
+            continue
+        if country_filter is not None and item["network"]["country_code"].lower() != country_filter:
+            continue
+        if anonymous_filter is not None and item["network"]["anonymous"] is not anonymous_filter:
+            continue
+        filtered_items.append(item)
+    return filtered_items
+
+
+def _parse_bool_filter(name: str, value: str | None) -> bool | None:
     if value is None:
         return None
-    return {item.strip().lower() for item in value.split(",") if item.strip()}
+    normalized = value.lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise HTTPException(status_code=422, detail=f"{name} must be true or false")
 
 
 def _validate_finite_filter(name: str, value: float | None) -> float | None:
     if value is not None and not math.isfinite(value):
         raise HTTPException(status_code=422, detail=f"{name} must be finite")
     return value
+
+
+def _validate_limit(value: int | None) -> int | None:
+    if value is None:
+        return None
+    if value <= 0:
+        raise HTTPException(status_code=422, detail="limit must be a positive integer")
+    return min(value, 1000)

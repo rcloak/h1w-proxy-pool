@@ -6,13 +6,41 @@ from proxy_pool import app as app_module
 from proxy_pool.app import create_app
 from proxy_pool.config import CheckerSettings, DEFAULT_CHECK_ENDPOINTS, Settings
 from proxy_pool import scheduler as scheduler_module
+from proxy_pool.storage import write_proxy_document
 
 
 def test_app_can_disable_scheduler_for_tests(tmp_path: Path):
-    app = create_app(result_path=tmp_path / "proxies.json", start_scheduler=False)
+    path = tmp_path / "proxies.json"
+    write_proxy_document(
+        path,
+        {
+            "version": 2,
+            "generated_at": "2026-05-22T12:00:00Z",
+            "total": 1,
+            "items": [
+                {
+                    "endpoint": "1.2.3.4:80",
+                    "source_protocol": "http",
+                    "usable_as": ["http"],
+                    "quality": {
+                        "score": 50.0,
+                        "success_rate": 1.0,
+                        "checks_passed": 1,
+                        "checks_failed": 0,
+                        "avg_latency_ms": 200,
+                        "last_error": None,
+                    },
+                    "network": {"exit_ip": "1.2.3.4", "country_code": "US", "anonymous": True},
+                    "timestamps": {"checked_at": "2026-05-22T12:00:00Z"},
+                }
+            ],
+        },
+    )
+    app = create_app(result_path=path, start_scheduler=False)
 
     with TestClient(app) as client:
         assert client.get("/health").status_code == 200
+        assert client.get("/").json()["items"][0]["endpoint"] == "1.2.3.4:80"
         assert getattr(app.state, "scheduler_task", None) is None
 
 
