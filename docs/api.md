@@ -116,7 +116,7 @@ Checked proxy rows include the legacy fields plus quality metadata:
 | `prototypes` | comma-separated string | Filters by protocol. Values are matched case-insensitively against `http`, `socks4`, and `socks5`. |
 | `countrycodes` | comma-separated string | Filters by `countryCode`, case-insensitively. |
 | `isanonymous` | string boolean | Filters by `is_anonymous`. Use `true` or `false`. |
-| `maxtimeout` | float | Keeps proxies whose `timeout` is less than or equal to the supplied value. |
+| `maxtimeout` | float | Keeps proxies whose `timeout` is less than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
 | `minscore` | float | Keeps proxies whose `score` is greater than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
 | `supportshttps` | string boolean | Filters by `supports_https`. Use `true` or `false`. |
 | `minsuccessrate` | float | Keeps proxies whose `success_rate` is greater than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
