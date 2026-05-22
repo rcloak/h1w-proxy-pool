@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable, Mapping
-from typing import Any
+from dataclasses import dataclass
+from ipaddress import ip_address
 from time import perf_counter
+from typing import Any
 
 from aiohttp import ClientSession
 from aiohttp_socks import ProxyConnector
@@ -23,6 +25,94 @@ from proxy_pool.storage import write_proxy_json
 
 CHECK_URL = "http://ip-api.com/json/?fields=8219"
 PROTOCOLS: tuple[Protocol, ...] = ("http", "socks4", "socks5")
+
+
+@dataclass(frozen=True, slots=True)
+class CheckAttempt:
+    success: bool
+    capability: str
+    observed_ip: str | None
+    country_code: str
+    timeout: float | None
+    error: str | None
+
+
+def extract_observed_ip(data: Mapping[str, Any]) -> tuple[str, str] | None:
+    value = data.get("query") or data.get("origin") or data.get("ip")
+    if not isinstance(value, str):
+        return None
+
+    observed = value.split(",", 1)[0].strip()
+    try:
+        ip_address(observed)
+    except ValueError:
+        return None
+
+    country_code = data.get("countryCode")
+    return observed, country_code if isinstance(country_code, str) else ""
+
+
+def calculate_score(
+    success_rate: float,
+    supports_https: bool,
+    is_anonymous: bool,
+    avg_timeout: float,
+) -> float:
+    latency_penalty = min(20.0, max(0.0, avg_timeout * 10.0))
+    score = (
+        success_rate * 70.0
+        + (15.0 if supports_https else 0.0)
+        + (10.0 if is_anonymous else 0.0)
+        - latency_penalty
+    )
+    return round(min(100.0, max(0.0, score)), 2)
+
+
+def aggregate_attempts(
+    address: str,
+    candidate_ip: str,
+    attempts: Iterable[CheckAttempt],
+    required_successes: int,
+    min_success_rate: float,
+    checked_at: str,
+) -> CheckedProxy | None:
+    attempt_list = list(attempts)
+    successes = [attempt for attempt in attempt_list if attempt.success]
+    failures = [attempt for attempt in attempt_list if not attempt.success]
+    success_count = len(successes)
+    failure_count = len(failures)
+    total_count = success_count + failure_count
+    success_rate = success_count / total_count if total_count else 0.0
+
+    if success_count < required_successes or success_rate < min_success_rate:
+        return None
+
+    successful_timeouts = [attempt.timeout for attempt in successes if attempt.timeout is not None]
+    if not successful_timeouts:
+        return None
+
+    avg_timeout = round(sum(successful_timeouts) / len(successful_timeouts), 6)
+    country_code = next((attempt.country_code for attempt in successes if attempt.country_code), "")
+    is_anonymous = any(attempt.observed_ip != candidate_ip for attempt in successes if attempt.observed_ip)
+    supports_http = any(attempt.capability == "http" for attempt in successes)
+    supports_https = any(attempt.capability == "https" for attempt in successes)
+    last_error = next((attempt.error for attempt in reversed(failures) if attempt.error), None)
+
+    return CheckedProxy(
+        address=address,
+        country_code=country_code,
+        is_anonymous=is_anonymous,
+        timeout=avg_timeout,
+        score=calculate_score(success_rate, supports_https, is_anonymous, avg_timeout),
+        success_rate=success_rate,
+        success_count=success_count,
+        failure_count=failure_count,
+        supports_http=supports_http,
+        supports_https=supports_https,
+        avg_timeout=avg_timeout,
+        last_error=last_error,
+        checked_at=checked_at,
+    )
 
 
 async def check_candidate(
