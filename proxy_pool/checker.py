@@ -16,16 +16,11 @@ from proxy_pool.models import (
     CheckedProxy,
     Protocol,
     ProxyCandidate,
-    ProxyJson,
-    checked_proxy_to_json,
-    empty_proxy_json,
+    ProxyDocument,
+    checked_proxy_to_item,
 )
 from proxy_pool.sources import collect_candidates
-from proxy_pool.storage import write_proxy_json
-
-
-PROTOCOLS: tuple[Protocol, ...] = ("http", "socks4", "socks5")
-
+from proxy_pool.storage import write_proxy_document
 
 @dataclass(frozen=True, slots=True)
 class PlannedAttempt:
@@ -103,6 +98,7 @@ def calculate_score(
 
 def aggregate_attempts(
     address: str,
+    source_protocol: Protocol,
     candidate_ip: str,
     attempts: Iterable[CheckAttempt],
     required_successes: int,
@@ -125,24 +121,31 @@ def aggregate_attempts(
         return None
 
     avg_timeout = round(sum(successful_timeouts) / len(successful_timeouts), 6)
+    avg_latency_ms = int(round(avg_timeout * 1000))
     country_code = next((attempt.country_code for attempt in successes if attempt.country_code), "")
+    exit_ip = next((attempt.observed_ip for attempt in successes if attempt.observed_ip), "")
     is_anonymous = any(attempt.observed_ip != candidate_ip for attempt in successes if attempt.observed_ip)
     supports_http = any(attempt.capability == "http" for attempt in successes)
     supports_https = any(attempt.capability == "https" for attempt in successes)
+    usable_as = tuple(
+        capability
+        for capability, supported in (("http", supports_http), ("https", supports_https))
+        if supported
+    )
     last_error = next((attempt.error for attempt in reversed(failures) if attempt.error), None)
 
     return CheckedProxy(
-        address=address,
+        endpoint=address,
+        source_protocol=source_protocol,
+        usable_as=usable_as,
+        exit_ip=exit_ip,
         country_code=country_code,
-        is_anonymous=is_anonymous,
-        timeout=avg_timeout,
+        anonymous=is_anonymous,
         score=calculate_score(success_rate, supports_https, is_anonymous, avg_timeout),
         success_rate=success_rate,
-        success_count=success_count,
-        failure_count=failure_count,
-        supports_http=supports_http,
-        supports_https=supports_https,
-        avg_timeout=avg_timeout,
+        checks_passed=success_count,
+        checks_failed=failure_count,
+        avg_latency_ms=avg_latency_ms,
         last_error=last_error,
         checked_at=checked_at,
     )
@@ -215,6 +218,7 @@ async def check_candidate(
         )
     return aggregate_attempts(
         address=candidate.address,
+        source_protocol=protocol,
         candidate_ip=candidate.ip,
         attempts=attempts,
         required_successes=checker.required_successes,
@@ -223,35 +227,15 @@ async def check_candidate(
     )
 
 
-def _checked_proxy_from_response(
-    candidate: ProxyCandidate,
-    data: Mapping[str, Any],
-    elapsed: float,
-) -> CheckedProxy | None:
-    query = data.get("query")
-    country_code = data.get("countryCode")
-    if not isinstance(query, str) or not query:
-        return None
-    if not isinstance(country_code, str) or not country_code:
-        return None
-
-    return CheckedProxy(
-        address=candidate.address,
-        country_code=country_code,
-        is_anonymous=candidate.ip != query,
-        timeout=elapsed,
-    )
-
-
 def sort_checked(proxies: Iterable[CheckedProxy], sort_by_speed: bool) -> list[CheckedProxy]:
     if sort_by_speed:
         return sorted(
             proxies,
-            key=lambda proxy: (-proxy.score, proxy.avg_timeout or proxy.timeout, _natural_address_key(proxy.address)),
+            key=lambda proxy: (-proxy.score, proxy.avg_latency_ms, _natural_address_key(proxy.endpoint)),
         )
     return sorted(
         proxies,
-        key=lambda proxy: _natural_address_key(proxy.address),
+        key=lambda proxy: _natural_address_key(proxy.endpoint),
     )
 
 
@@ -259,23 +243,15 @@ def _natural_address_key(address: str) -> tuple[int, ...]:
     return tuple(map(int, address.replace(":", ".").split(".")))
 
 
-def build_proxy_json(proxies: Mapping[Protocol, Iterable[CheckedProxy]]) -> ProxyJson:
-    payload = empty_proxy_json()
-    for protocol in PROTOCOLS:
-        payload[protocol] = [
-            checked_proxy_to_json(proxy)
-            for proxy in proxies.get(protocol, ())
-        ]
-    payload["total_count_of_proxies"] = sum(
-        len(payload[protocol]) for protocol in PROTOCOLS
-    )
-    return payload
+def build_proxy_document(proxies: Iterable[CheckedProxy], generated_at: str) -> ProxyDocument:
+    items = [checked_proxy_to_item(proxy) for proxy in proxies]
+    return {"version": 2, "generated_at": generated_at, "total": len(items), "items": items}
 
 
-async def run_pipeline(settings: Settings) -> ProxyJson:
+async def run_pipeline(settings: Settings) -> ProxyDocument:
     candidates = await collect_candidates(settings.sources)
     semaphore = asyncio.Semaphore(settings.max_connections)
-    checked: dict[Protocol, list[CheckedProxy]] = {protocol: [] for protocol in PROTOCOLS}
+    checked: list[CheckedProxy] = []
     checked_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     for protocol, protocol_candidates in candidates.items():
@@ -292,14 +268,11 @@ async def run_pipeline(settings: Settings) -> ProxyJson:
                 for candidate in protocol_candidates
             )
         )
-        checked[protocol].extend(result for result in results if result is not None)
+        checked.extend(result for result in results if result is not None)
 
-    sorted_proxies = {
-        protocol: sort_checked(proxies, settings.sort_by_speed)
-        for protocol, proxies in checked.items()
-    }
-    payload = build_proxy_json(sorted_proxies)
-    write_proxy_json(settings.result_path, payload)
+    sorted_proxies = sort_checked(checked, settings.sort_by_speed)
+    payload = build_proxy_document(sorted_proxies, generated_at=checked_at)
+    write_proxy_document(settings.result_path, payload)
     return payload
 
 
