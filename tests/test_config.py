@@ -94,6 +94,79 @@ Sources =
     assert settings.result_path == Path("/app/proxies.json")
 
 
+def test_load_config_accepts_fractional_timeout(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+Timeout = 0.5
+MaxConnections = 25
+SortBySpeed = yes
+SavePath =
+JsonResultFilename = proxies.json
+SaveFormat = json
+
+[HTTP]
+Enabled = no
+Sources =
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.timeout == 0.5
+
+
+def test_load_config_treats_omitted_enabled_as_enabled(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+Timeout = 10
+MaxConnections = 25
+SortBySpeed = yes
+SavePath =
+JsonResultFilename = proxies.json
+SaveFormat = json
+
+[HTTP]
+Sources =
+    https://example.test/http.txt
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.sources == {"http": ("https://example.test/http.txt",)}
+
+
+def test_load_config_uses_legacy_general_fallbacks(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+SavePath =
+
+[HTTP]
+Enabled = no
+Sources =
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.timeout == 10
+    assert settings.max_connections == 900
+    assert settings.sort_by_speed is True
+    assert settings.json_result_filename == "proxies.json"
+    assert settings.save_format == "json"
+    assert settings.refresh_interval_seconds == 900
+    assert settings.result_path == tmp_path / "proxies.json"
+
+
 def test_empty_proxy_json_returns_empty_schema():
     assert empty_proxy_json() == {
         "total_count_of_proxies": 0,

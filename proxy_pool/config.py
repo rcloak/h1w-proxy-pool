@@ -10,7 +10,7 @@ from proxy_pool.models import Protocol
 @dataclass(frozen=True, slots=True)
 class Settings:
     config_path: Path
-    timeout: int
+    timeout: float
     max_connections: int
     sort_by_speed: bool
     save_path: Path
@@ -38,12 +38,12 @@ def load_config(path: str | Path = "config.ini") -> Settings:
 
     return Settings(
         config_path=config_path,
-        timeout=general.getint("Timeout"),
-        max_connections=general.getint("MaxConnections"),
-        sort_by_speed=general.getboolean("SortBySpeed"),
+        timeout=general.getfloat("Timeout", fallback=10),
+        max_connections=general.getint("MaxConnections", fallback=900),
+        sort_by_speed=general.getboolean("SortBySpeed", fallback=True),
         save_path=save_path,
-        json_result_filename=general.get("JsonResultFilename"),
-        save_format=general.get("SaveFormat"),
+        json_result_filename=general.get("JsonResultFilename", fallback="proxies.json"),
+        save_format=general.get("SaveFormat", fallback="json"),
         refresh_interval_seconds=general.getint("RefreshIntervalSeconds", fallback=900),
         sources=_load_sources(parser),
     )
@@ -53,7 +53,9 @@ def _load_sources(parser: ConfigParser) -> dict[Protocol, tuple[str, ...]]:
     sources: dict[Protocol, tuple[str, ...]] = {}
     for protocol in ("http", "socks4", "socks5"):
         section = protocol.upper()
-        if not parser.getboolean(section, "Enabled", fallback=False):
+        if not parser.has_section(section):
+            continue
+        if not parser.getboolean(section, "Enabled", fallback=True):
             continue
 
         protocol_sources = tuple(
