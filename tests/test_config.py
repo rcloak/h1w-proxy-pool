@@ -272,3 +272,106 @@ Sources =
     assert settings.checker.check_http is True
     assert settings.checker.check_https is True
     assert settings.checker.min_success_rate == 0.5
+
+
+def test_load_config_uses_checker_defaults_for_malformed_values(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+SavePath =
+
+[HTTP]
+Enabled = no
+Sources =
+
+[Checker]
+Endpoints =
+AttemptsPerProxy = invalid
+RequiredSuccesses = invalid
+CheckHttp = invalid
+CheckHttps = invalid
+MinSuccessRate = invalid
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.checker.endpoints == (
+        "http://httpbin.org/ip",
+        "https://api.ipify.org?format=json",
+        "http://ip-api.com/json/?fields=8219",
+    )
+    assert settings.checker.attempts_per_proxy == 2
+    assert settings.checker.required_successes == 1
+    assert settings.checker.check_http is True
+    assert settings.checker.check_https is True
+    assert settings.checker.min_success_rate == 0.5
+
+
+def test_load_config_clamps_checker_numeric_bounds(tmp_path: Path):
+    low_config_file = tmp_path / "low.ini"
+    low_config_file.write_text(
+        """
+[General]
+SavePath =
+
+[HTTP]
+Enabled = no
+Sources =
+
+[Checker]
+AttemptsPerProxy = 0
+RequiredSuccesses = 0
+MinSuccessRate = -1
+""".strip(),
+        encoding="utf-8",
+    )
+    high_config_file = tmp_path / "high.ini"
+    high_config_file.write_text(
+        """
+[General]
+SavePath =
+
+[HTTP]
+Enabled = no
+Sources =
+
+[Checker]
+MinSuccessRate = 2
+""".strip(),
+        encoding="utf-8",
+    )
+
+    low_settings = load_config(low_config_file)
+    high_settings = load_config(high_config_file)
+
+    assert low_settings.checker.attempts_per_proxy == 1
+    assert low_settings.checker.required_successes == 1
+    assert low_settings.checker.min_success_rate == 0.0
+    assert high_settings.checker.min_success_rate == 1.0
+
+
+def test_load_config_enables_http_when_all_checker_capabilities_disabled(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+SavePath =
+
+[HTTP]
+Enabled = no
+Sources =
+
+[Checker]
+CheckHttp = no
+CheckHttps = no
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.checker.check_http is True
+    assert settings.checker.check_https is False

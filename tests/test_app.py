@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from proxy_pool import app as app_module
 from proxy_pool.app import create_app
-from proxy_pool.config import Settings
+from proxy_pool.config import CheckerSettings, DEFAULT_CHECK_ENDPOINTS, Settings
 from proxy_pool import scheduler as scheduler_module
 
 
@@ -40,6 +40,14 @@ async def test_scheduler_records_refresh_errors_and_continues(monkeypatch, tmp_p
         save_format="json",
         refresh_interval_seconds=0,
         sources={},
+        checker=CheckerSettings(
+            endpoints=DEFAULT_CHECK_ENDPOINTS,
+            attempts_per_proxy=2,
+            required_successes=1,
+            check_http=True,
+            check_https=True,
+            min_success_rate=0.5,
+        ),
     )
     stop_event = scheduler_module.asyncio.Event()
     errors: list[str] = []

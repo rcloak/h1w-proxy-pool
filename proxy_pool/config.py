@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from configparser import ConfigParser
+from configparser import ConfigParser, SectionProxy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -96,13 +96,17 @@ def _load_checker_settings(parser: ConfigParser) -> CheckerSettings:
         )
         if not endpoints:
             endpoints = DEFAULT_CHECK_ENDPOINTS
+        check_http = _get_checker_bool(section, "CheckHttp", True)
+        check_https = _get_checker_bool(section, "CheckHttps", True)
+        if not check_http and not check_https:
+            check_http = True
         return CheckerSettings(
             endpoints=endpoints,
-            attempts_per_proxy=max(1, section.getint("AttemptsPerProxy", fallback=2)),
-            required_successes=max(1, section.getint("RequiredSuccesses", fallback=1)),
-            check_http=section.getboolean("CheckHttp", fallback=True),
-            check_https=section.getboolean("CheckHttps", fallback=True),
-            min_success_rate=min(1.0, max(0.0, section.getfloat("MinSuccessRate", fallback=0.5))),
+            attempts_per_proxy=max(1, _get_checker_int(section, "AttemptsPerProxy", 2)),
+            required_successes=max(1, _get_checker_int(section, "RequiredSuccesses", 1)),
+            check_http=check_http,
+            check_https=check_https,
+            min_success_rate=min(1.0, max(0.0, _get_checker_float(section, "MinSuccessRate", 0.5))),
         )
     return CheckerSettings(
         endpoints=DEFAULT_CHECK_ENDPOINTS,
@@ -112,3 +116,24 @@ def _load_checker_settings(parser: ConfigParser) -> CheckerSettings:
         check_https=True,
         min_success_rate=0.5,
     )
+
+
+def _get_checker_int(section: SectionProxy, option: str, fallback: int) -> int:
+    try:
+        return section.getint(option, fallback=fallback)
+    except ValueError:
+        return fallback
+
+
+def _get_checker_float(section: SectionProxy, option: str, fallback: float) -> float:
+    try:
+        return section.getfloat(option, fallback=fallback)
+    except ValueError:
+        return fallback
+
+
+def _get_checker_bool(section: SectionProxy, option: str, fallback: bool) -> bool:
+    try:
+        return section.getboolean(option, fallback=fallback)
+    except ValueError:
+        return fallback
