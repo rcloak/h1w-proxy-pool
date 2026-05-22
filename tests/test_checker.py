@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from proxy_pool.checker import (
@@ -7,6 +9,7 @@ from proxy_pool.checker import (
     build_attempt_plan,
     build_proxy_json,
     calculate_score,
+    check_candidate,
     endpoint_supports_capability,
     extract_observed_ip,
     sort_checked,
@@ -185,3 +188,76 @@ def test_build_attempt_plan_repeats_enabled_capabilities_and_matching_endpoints(
         ("http", "http://example.test/ip"),
         ("https", "https://example.test/ip"),
     ]
+
+
+async def test_check_candidate_records_failed_attempt_when_no_endpoints_match(monkeypatch):
+    captured_attempts = None
+
+    def fake_aggregate_attempts(**kwargs):
+        nonlocal captured_attempts
+        captured_attempts = tuple(kwargs["attempts"])
+        return None
+
+    monkeypatch.setattr("proxy_pool.checker.aggregate_attempts", fake_aggregate_attempts)
+    checker = CheckerSettings(
+        endpoints=("https://example.test/ip",),
+        attempts_per_proxy=1,
+        required_successes=1,
+        check_http=True,
+        check_https=False,
+        min_success_rate=0.5,
+    )
+
+    result = await check_candidate(
+        ProxyCandidate(address="1.2.3.4:80", ip="1.2.3.4"),
+        "http",
+        1.0,
+        asyncio.Semaphore(1),
+        checker,
+        "2026-05-22T12:00:00Z",
+    )
+
+    assert result is None
+    assert captured_attempts == (
+        CheckAttempt(False, "none", None, "", None, "no matching check endpoints"),
+    )
+
+
+async def test_check_candidate_limits_concurrent_attempts_to_semaphore(monkeypatch):
+    active_attempts = 0
+    max_active_attempts = 0
+
+    async def fake_run_attempt(candidate, protocol, endpoint, capability, timeout):
+        nonlocal active_attempts, max_active_attempts
+        active_attempts += 1
+        max_active_attempts = max(max_active_attempts, active_attempts)
+        await asyncio.sleep(0)
+        active_attempts -= 1
+        return CheckAttempt(True, capability, "8.8.8.8", "US", 0.1, None)
+
+    monkeypatch.setattr("proxy_pool.checker.run_attempt", fake_run_attempt)
+    checker = CheckerSettings(
+        endpoints=(
+            "http://one.example.test/ip",
+            "http://two.example.test/ip",
+            "http://three.example.test/ip",
+            "http://four.example.test/ip",
+        ),
+        attempts_per_proxy=1,
+        required_successes=1,
+        check_http=True,
+        check_https=False,
+        min_success_rate=0.5,
+    )
+
+    result = await check_candidate(
+        ProxyCandidate(address="1.2.3.4:80", ip="1.2.3.4"),
+        "http",
+        1.0,
+        asyncio.Semaphore(2),
+        checker,
+        "2026-05-22T12:00:00Z",
+    )
+
+    assert result is not None
+    assert max_active_attempts == 2

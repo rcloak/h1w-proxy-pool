@@ -174,6 +174,18 @@ async def run_attempt(
         return CheckAttempt(False, capability, None, "", None, type(exc).__name__)
 
 
+async def run_attempt_with_semaphore(
+    candidate: ProxyCandidate,
+    protocol: Protocol,
+    endpoint: str,
+    capability: str,
+    timeout: float,
+    semaphore: asyncio.Semaphore,
+) -> CheckAttempt:
+    async with semaphore:
+        return await run_attempt(candidate, protocol, endpoint, capability, timeout)
+
+
 async def check_candidate(
     candidate: ProxyCandidate,
     protocol: Protocol,
@@ -183,10 +195,21 @@ async def check_candidate(
     checked_at: str,
 ) -> CheckedProxy | None:
     attempt_plan = build_attempt_plan(candidate, checker)
-    async with semaphore:
+    if not attempt_plan:
+        attempts = (
+            CheckAttempt(False, "none", None, "", None, "no matching check endpoints"),
+        )
+    else:
         attempts = await asyncio.gather(
             *(
-                run_attempt(candidate, protocol, item.endpoint, item.capability, timeout)
+                run_attempt_with_semaphore(
+                    candidate,
+                    protocol,
+                    item.endpoint,
+                    item.capability,
+                    timeout,
+                    semaphore,
+                )
                 for item in attempt_plan
             )
         )
