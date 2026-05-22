@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
+from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 from fastapi import FastAPI
@@ -13,13 +15,31 @@ from proxy_pool.config import load_config
 from proxy_pool.scheduler import scheduler_loop
 
 
+def default_last_refresh() -> dict[str, Any]:
+    return {
+        "started_at": None,
+        "finished_at": None,
+        "duration_seconds": None,
+        "proxies_alive": 0,
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.last_scheduler_error = None
+    app.state.last_refresh = default_last_refresh()
 
     if app.state.start_scheduler and app.state.settings is not None:
         def record_scheduler_error(exc: Exception) -> None:
             app.state.last_scheduler_error = str(exc)
+
+        def record_scheduler_success(started: datetime, finished: datetime, payload: dict[str, Any]) -> None:
+            app.state.last_refresh = {
+                "started_at": started.isoformat(),
+                "finished_at": finished.isoformat(),
+                "duration_seconds": (finished - started).total_seconds(),
+                "proxies_alive": int(payload.get("total", 0)),
+            }
 
         stop_event = asyncio.Event()
         app.state.scheduler_stop_event = stop_event
@@ -28,6 +48,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
                 app.state.settings,
                 stop_event,
                 on_error=record_scheduler_error,
+                on_success=record_scheduler_success,
             )
         )
     else:
@@ -59,6 +80,7 @@ def create_app(result_path: str | Path | None = None, start_scheduler: bool = Tr
         app.state.result_path = Path(result_path)
 
     app.state.start_scheduler = start_scheduler
+    app.state.last_refresh = default_last_refresh()
     app.include_router(router)
     return app
 

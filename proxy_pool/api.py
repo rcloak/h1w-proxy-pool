@@ -73,11 +73,10 @@ def stats(request: Request) -> dict[str, Any]:
     last_refresh = getattr(request.app.state, "last_refresh", None)
     if not isinstance(last_refresh, dict):
         last_refresh = {
-            "generated_at": payload["generated_at"] or None,
             "started_at": None,
             "finished_at": None,
             "duration_seconds": None,
-            "proxies_alive": payload["total"],
+            "proxies_alive": 0,
         }
 
     return {

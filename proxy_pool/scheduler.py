@@ -4,6 +4,8 @@ import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import suppress
+from datetime import UTC, datetime
+from typing import Any
 
 from proxy_pool.checker import run_pipeline
 from proxy_pool.config import Settings
@@ -15,10 +17,15 @@ async def scheduler_loop(
     settings: Settings,
     stop_event: asyncio.Event,
     on_error: Callable[[Exception], None] | None = None,
+    on_success: Callable[[datetime, datetime, dict[str, Any]], None] | None = None,
 ) -> None:
     while not stop_event.is_set():
         try:
-            await run_pipeline(settings)
+            started = datetime.now(UTC)
+            payload = await run_pipeline(settings)
+            finished = datetime.now(UTC)
+            if on_success is not None:
+                on_success(started, finished, payload)
         except Exception as exc:
             logger.exception("Proxy refresh failed")
             if on_error is not None:

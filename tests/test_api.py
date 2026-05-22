@@ -214,12 +214,34 @@ def test_stats_returns_v2_counts_and_default_refresh_info(tmp_path: Path):
         "by_source_protocol": {"http": 1, "socks4": 0, "socks5": 1},
         "by_capability": {"http": 2, "https": 1},
         "last_refresh": {
-            "generated_at": "2026-05-22T12:00:00Z",
             "started_at": None,
             "finished_at": None,
             "duration_seconds": None,
-            "proxies_alive": 2,
+            "proxies_alive": 0,
         },
+    }
+
+
+def test_stats_returns_last_refresh_from_app_state(tmp_path: Path):
+    path = tmp_path / "proxies.json"
+    write_document(path, [make_proxy_item("1.1.1.1:80")])
+    app = create_app(result_path=path, start_scheduler=False)
+
+    with TestClient(app) as client:
+        app.state.last_refresh = {
+            "started_at": "2026-05-22T12:00:00+00:00",
+            "finished_at": "2026-05-22T12:00:01+00:00",
+            "duration_seconds": 1.0,
+            "proxies_alive": 2,
+        }
+        response = client.get("/stats")
+
+    assert response.status_code == 200
+    assert response.json()["last_refresh"] == {
+        "started_at": "2026-05-22T12:00:00+00:00",
+        "finished_at": "2026-05-22T12:00:01+00:00",
+        "duration_seconds": 1.0,
+        "proxies_alive": 2,
     }
 
 
