@@ -257,7 +257,7 @@ def valid_endpoint(value: str) -> bool:
         port_number = int(port)
     except ValueError:
         return False
-    return 0 <= port_number <= 65535
+    return 1 <= port_number <= 65535
 
 
 def _clamp_float(value: float, minimum: float, maximum: float, default: float) -> float:
