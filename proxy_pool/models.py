@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from ipaddress import ip_address
 from math import isfinite
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, TypedDict
 
 
 Protocol = Literal["http", "socks4", "socks5"]
@@ -155,29 +155,6 @@ class ProxyDocument(TypedDict):
     items: list[ProxyItem]
 
 
-class ProxyJsonItem(TypedDict):
-    address: str
-    countryCode: str
-    is_anonymous: bool
-    timeout: float
-    score: NotRequired[float]
-    success_rate: NotRequired[float]
-    success_count: NotRequired[int]
-    failure_count: NotRequired[int]
-    supports_http: NotRequired[bool]
-    supports_https: NotRequired[bool]
-    avg_timeout: NotRequired[float]
-    last_error: NotRequired[str | None]
-    checked_at: NotRequired[str]
-
-
-class ProxyJson(TypedDict):
-    total_count_of_proxies: int
-    http: list[ProxyJsonItem]
-    socks4: list[ProxyJsonItem]
-    socks5: list[ProxyJsonItem]
-
-
 def empty_proxy_document(generated_at: str = "") -> ProxyDocument:
     return {
         "version": 2,
@@ -217,34 +194,6 @@ def checked_proxy_to_item(proxy: CheckedProxy) -> ProxyItem:
             "anonymous": proxy.anonymous,
         },
         "timestamps": {"checked_at": proxy.checked_at},
-    }
-
-
-def empty_proxy_json() -> ProxyJson:
-    return {
-        "total_count_of_proxies": 0,
-        "http": [],
-        "socks4": [],
-        "socks5": [],
-    }
-
-
-def checked_proxy_to_json(proxy: CheckedProxy) -> ProxyJsonItem:
-    timeout = proxy.timeout
-    return {
-        "address": proxy.address,
-        "countryCode": proxy.country_code,
-        "is_anonymous": proxy.is_anonymous,
-        "timeout": timeout,
-        "score": _clamp_float(proxy.score, 0.0, 100.0, 0.0),
-        "success_rate": _clamp_float(proxy.success_rate, 0.0, 1.0, 0.0),
-        "success_count": _nonnegative_int(proxy.success_count),
-        "failure_count": _nonnegative_int(proxy.failure_count),
-        "supports_http": proxy.supports_http,
-        "supports_https": proxy.supports_https,
-        "avg_timeout": proxy.avg_timeout or timeout,
-        "last_error": proxy.last_error,
-        "checked_at": proxy.checked_at,
     }
 
 

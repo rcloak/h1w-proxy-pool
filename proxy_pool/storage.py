@@ -13,10 +13,7 @@ from proxy_pool.models import (
     Protocol,
     ProxyDocument,
     ProxyItem,
-    ProxyJson,
-    ProxyJsonItem,
     empty_proxy_document,
-    empty_proxy_json,
     valid_endpoint,
 )
 
@@ -122,74 +119,6 @@ def _valid_ip(value: str) -> bool:
     except ValueError:
         return False
     return True
-
-
-def read_proxy_json(path: Path) -> ProxyJson:
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return empty_proxy_json()
-
-    if not isinstance(payload, dict):
-        return empty_proxy_json()
-
-    normalized = empty_proxy_json()
-    for protocol in ("http", "socks4", "socks5"):
-        value = payload.get(protocol)
-        if isinstance(value, list):
-            normalized[protocol] = [
-                normalized_item for item in value if (normalized_item := _normalize_proxy_json_item(item)) is not None
-            ]
-
-    normalized["total_count_of_proxies"] = sum(
-        len(normalized[protocol]) for protocol in ("http", "socks4", "socks5")
-    )
-    return cast(ProxyJson, normalized)
-
-
-def _normalize_proxy_json_item(item: object) -> ProxyJsonItem | None:
-    if not isinstance(item, dict):
-        return None
-
-    address = item.get("address")
-    country_code = item.get("countryCode")
-    is_anonymous = item.get("is_anonymous")
-    timeout = item.get("timeout")
-
-    if not isinstance(address, str):
-        return None
-    if not isinstance(country_code, str):
-        return None
-    if not isinstance(is_anonymous, bool):
-        return None
-    if isinstance(timeout, bool) or not isinstance(timeout, int | float):
-        return None
-    timeout_float = float(timeout)
-
-    supports_http = item.get("supports_http")
-    supports_https = item.get("supports_https")
-    last_error = item.get("last_error")
-    checked_at = item.get("checked_at")
-
-    return {
-        "address": address,
-        "countryCode": country_code,
-        "is_anonymous": is_anonymous,
-        "timeout": timeout_float,
-        "score": _number(item.get("score"), 0.0, minimum=0.0, maximum=100.0),
-        "success_rate": _number(item.get("success_rate"), 0.0, minimum=0.0, maximum=1.0),
-        "success_count": _int(item.get("success_count"), 0),
-        "failure_count": _int(item.get("failure_count"), 0),
-        "supports_http": supports_http if isinstance(supports_http, bool) else False,
-        "supports_https": supports_https if isinstance(supports_https, bool) else False,
-        "avg_timeout": _number(item.get("avg_timeout"), timeout_float),
-        "last_error": last_error if isinstance(last_error, str) or last_error is None else str(last_error),
-        "checked_at": checked_at if isinstance(checked_at, str) else "",
-    }
-
-
-def write_proxy_json(path: Path, payload: ProxyJson) -> None:
-    _write_json_atomic(path, cast(dict[str, Any], payload))
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:

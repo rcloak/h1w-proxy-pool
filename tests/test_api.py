@@ -17,6 +17,7 @@ def make_proxy_item(
     usable_as: list[str] | None = None,
     score: float = 50.0,
     success_rate: float = 1.0,
+    avg_latency_ms: int = 200,
     country: str = "US",
     anonymous: bool = True,
     checked_at: str = "2026-05-22T12:00:00Z",
@@ -30,7 +31,7 @@ def make_proxy_item(
             "success_rate": success_rate,
             "checks_passed": 1,
             "checks_failed": 0,
-            "avg_latency_ms": 200,
+            "avg_latency_ms": avg_latency_ms,
             "last_error": None,
         },
         "network": {
@@ -123,6 +124,30 @@ def test_proxies_sort_by_score_and_limits_results(tmp_path: Path):
     assert response.status_code == 200
     assert response.json()["total"] == 2
     assert [item["endpoint"] for item in response.json()["items"]] == ["2.2.2.2:80", "3.3.3.3:80"]
+
+
+def test_proxies_sort_ties_by_latency_then_endpoint(tmp_path: Path):
+    path = tmp_path / "proxies.json"
+    write_document(
+        path,
+        [
+            make_proxy_item("3.3.3.3:80", score=90.0, avg_latency_ms=200),
+            make_proxy_item("2.2.2.2:80", score=90.0, avg_latency_ms=100),
+            make_proxy_item("1.1.1.1:80", score=90.0, avg_latency_ms=100),
+            make_proxy_item("4.4.4.4:80", score=80.0, avg_latency_ms=50),
+        ],
+    )
+    client = TestClient(create_app(result_path=path, start_scheduler=False))
+
+    response = client.get("/proxies")
+
+    assert response.status_code == 200
+    assert [item["endpoint"] for item in response.json()["items"]] == [
+        "1.1.1.1:80",
+        "2.2.2.2:80",
+        "3.3.3.3:80",
+        "4.4.4.4:80",
+    ]
 
 
 def test_proxies_caps_limit_at_1000(tmp_path: Path):

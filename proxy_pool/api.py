@@ -52,7 +52,7 @@ def proxies(
         country=country,
         anonymous=anonymous,
     )
-    items.sort(key=lambda item: item["quality"]["score"], reverse=True)
+    items.sort(key=lambda item: (-item["quality"]["score"], item["quality"]["avg_latency_ms"], item["endpoint"]))
     if limit is not None:
         items = items[:limit]
     return {"total": len(items), "items": items}
