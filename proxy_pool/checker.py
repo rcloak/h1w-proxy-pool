@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable, Mapping
+from typing import Any
 from time import perf_counter
 
 from aiohttp import ClientSession
@@ -41,14 +42,29 @@ async def check_candidate(
                     raise_for_status=True,
                 ) as response:
                     data = await response.json()
-            return CheckedProxy(
-                address=candidate.address,
-                country_code=str(data.get("countryCode", "")),
-                is_anonymous=candidate.ip != data.get("query", ""),
-                timeout=perf_counter() - start,
-            )
+            return _checked_proxy_from_response(candidate, data, perf_counter() - start)
         except Exception:
             return None
+
+
+def _checked_proxy_from_response(
+    candidate: ProxyCandidate,
+    data: Mapping[str, Any],
+    elapsed: float,
+) -> CheckedProxy | None:
+    query = data.get("query")
+    country_code = data.get("countryCode")
+    if not isinstance(query, str) or not query:
+        return None
+    if not isinstance(country_code, str) or not country_code:
+        return None
+
+    return CheckedProxy(
+        address=candidate.address,
+        country_code=country_code,
+        is_anonymous=candidate.ip != query,
+        timeout=elapsed,
+    )
 
 
 def sort_checked(proxies: Iterable[CheckedProxy], sort_by_speed: bool) -> list[CheckedProxy]:
@@ -76,19 +92,16 @@ def build_proxy_json(proxies: Mapping[Protocol, Iterable[CheckedProxy]]) -> Prox
 async def run_pipeline(settings: Settings) -> ProxyJson:
     candidates = await collect_candidates(settings.sources)
     semaphore = asyncio.Semaphore(settings.max_connections)
-    tasks = {
-        asyncio.create_task(
-            check_candidate(candidate, protocol, settings.timeout, semaphore)
-        ): protocol
-        for protocol, protocol_candidates in candidates.items()
-        for candidate in protocol_candidates
-    }
-
     checked: dict[Protocol, list[CheckedProxy]] = {protocol: [] for protocol in PROTOCOLS}
-    for task, protocol in tasks.items():
-        result = await task
-        if result is not None:
-            checked[protocol].append(result)
+
+    for protocol, protocol_candidates in candidates.items():
+        results = await asyncio.gather(
+            *(
+                check_candidate(candidate, protocol, settings.timeout, semaphore)
+                for candidate in protocol_candidates
+            )
+        )
+        checked[protocol].extend(result for result in results if result is not None)
 
     sorted_proxies = {
         protocol: sort_checked(proxies, settings.sort_by_speed)
