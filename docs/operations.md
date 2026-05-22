@@ -89,11 +89,14 @@ If `GET /` returns an empty proxy document:
 
 - Check `GET /health` and confirm `storage_path` is expected.
 - Confirm `storage_exists` is `true`; the first refresh may still be running.
+- Check `GET /stats` for `total`, protocol counts, capability counts, and `last_refresh` metadata.
 - Run `uv run proxy-pool-scrape` once and watch for errors.
 - Check that source sections are enabled and have URLs.
 - Check that `[Checker] Endpoints` are reachable from the host and are not rate-limiting requests.
 - Check whether public proxies are failing the configured `RequiredSuccesses` or `MinSuccessRate` thresholds.
 - Lower `MaxConnections` if the host is resource constrained.
+
+The result file should be a v2 document with `version`, `generated_at`, `total`, and `items`. Each item records `endpoint`, `source_protocol`, `usable_as`, `quality`, `network`, and `timestamps`.
 
 If the scheduler is not running:
 

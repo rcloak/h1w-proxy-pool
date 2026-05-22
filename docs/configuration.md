@@ -10,7 +10,7 @@ Proxy Pool reads configuration from `config.ini` by default. The API service loa
 | --- | --- | --- | --- |
 | `Timeout` | float | `10` | Seconds to wait for each checked proxy request. Fractional values are accepted. |
 | `MaxConnections` | integer | `900` | Maximum concurrent proxy checks. Keep this bounded to avoid local resource exhaustion. |
-| `SortBySpeed` | boolean | `yes` | When enabled, output proxies are sorted by quality score, average timeout, then address. When disabled, they are sorted by address. |
+| `SortBySpeed` | boolean | `yes` | When enabled, output proxies are sorted by quality score, average latency, then endpoint. When disabled, they are sorted by endpoint. |
 | `SavePath` | path | directory containing `config.ini` | Directory where the result file is written. An empty value means the config file directory. Docker uses `/app/data`. |
 | `JsonResultFilename` | string | `proxies.json` | Result JSON filename. The effective path is `SavePath / JsonResultFilename`. |
 | `SaveFormat` | string | `json` | Configured output format. The current implementation writes JSON. |
@@ -90,7 +90,22 @@ CheckHttps = yes
 MinSuccessRate = 0.5
 ```
 
-Checker endpoints must return JSON containing one of `query`, `origin`, or `ip`. `countryCode` is optional and is preserved when present.
+Checker endpoints must return JSON containing an observed IP in `query`, `origin`, or `ip`. Country metadata is optional and is preserved in `network.country_code` when present.
+
+## Output Shape
+
+The configured result file is written as a v2 proxy document:
+
+```json
+{
+  "version": 2,
+  "generated_at": "2026-05-22T12:00:00Z",
+  "total": 0,
+  "items": []
+}
+```
+
+Each item includes `endpoint`, `source_protocol`, `usable_as`, `quality`, `network`, and `timestamps`. `source_protocol` is the protocol used to connect to the proxy candidate, while `usable_as` lists the HTTP and HTTPS destination capabilities that succeeded during checking.
 
 ## Folders Section
 

@@ -2,126 +2,145 @@
 
 The API is served by FastAPI from `proxy_pool.app:app`.
 
-## `GET /`
+## `GET /proxies`
 
-Without query parameters, `GET /` returns the full stored proxy JSON document.
+Returns the current v2 proxy list from the result JSON file. The response is always a list document with a `total` count and `items` array, including when filters are supplied.
 
 Example response:
 
 ```json
 {
-  "total_count_of_proxies": 2,
-  "http": [
+  "total": 2,
+  "items": [
     {
-      "address": "1.2.3.4:8080",
-      "countryCode": "US",
-      "is_anonymous": true,
-      "timeout": 0.42,
-      "score": 90.8,
-      "success_rate": 1.0,
-      "success_count": 4,
-      "failure_count": 0,
-      "supports_http": true,
-      "supports_https": true,
-      "avg_timeout": 0.42,
-      "last_error": null,
-      "checked_at": "2026-05-22T12:00:00Z"
-    }
-  ],
-  "socks4": [],
-  "socks5": [
+      "endpoint": "1.2.3.4:8080",
+      "source_protocol": "http",
+      "usable_as": ["http", "https"],
+      "quality": {
+        "score": 90.8,
+        "success_rate": 1.0,
+        "checks_passed": 4,
+        "checks_failed": 0,
+        "avg_latency_ms": 420,
+        "last_error": null
+      },
+      "network": {
+        "exit_ip": "8.8.8.8",
+        "country_code": "US",
+        "anonymous": true
+      },
+      "timestamps": {
+        "checked_at": "2026-05-22T12:00:00Z"
+      }
+    },
     {
-      "address": "5.6.7.8:1080",
-      "countryCode": "DE",
-      "is_anonymous": false,
-      "timeout": 1.2,
-      "score": 40.5,
-      "success_rate": 0.75,
-      "success_count": 3,
-      "failure_count": 1,
-      "supports_http": true,
-      "supports_https": false,
-      "avg_timeout": 1.2,
-      "last_error": "TimeoutError",
-      "checked_at": "2026-05-22T12:00:00Z"
+      "endpoint": "5.6.7.8:1080",
+      "source_protocol": "socks5",
+      "usable_as": ["http"],
+      "quality": {
+        "score": 40.5,
+        "success_rate": 0.75,
+        "checks_passed": 3,
+        "checks_failed": 1,
+        "avg_latency_ms": 1200,
+        "last_error": "TimeoutError"
+      },
+      "network": {
+        "exit_ip": "5.6.7.8",
+        "country_code": "DE",
+        "anonymous": false
+      },
+      "timestamps": {
+        "checked_at": "2026-05-22T12:00:00Z"
+      }
     }
   ]
 }
 ```
 
-If the result file does not exist or cannot be parsed, the API returns an empty document:
+If the result file does not exist or cannot be parsed, the API returns an empty v2 list:
 
 ```json
 {
-  "total_count_of_proxies": 0,
-  "http": [],
-  "socks4": [],
-  "socks5": []
+  "total": 0,
+  "items": []
 }
 ```
 
-## Filtered List Behavior
+## `GET /`
 
-When any supported query parameter is present, `GET /` returns a flattened list instead of the full protocol-grouped document. Each row includes the original proxy fields plus `prototype`, which identifies the protocol bucket the proxy came from.
+Returns the same response shape and supports the same filters as `GET /proxies`.
+
+## Query Parameters
+
+Filters are combined with AND semantics. Filtered responses keep the same `{ "total", "items" }` shape and `total` is the number of returned items after filtering and limiting.
 
 Example:
 
 ```http
-GET /?prototypes=http,socks5&countrycodes=us&isanonymous=true&maxtimeout=0.5&minscore=80&supportshttps=true&minsuccessrate=0.9
+GET /proxies?source_protocol=http&usable_as=https&min_score=80&min_success_rate=0.9&country=us&anonymous=true&limit=10
 ```
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `source_protocol` | string | Filters by the protocol used to connect to the proxy. Accepted values are `http`, `socks4`, and `socks5`, matched case-insensitively. |
+| `usable_as` | string | Keeps proxies that successfully reached the requested destination capability. Accepted values are `http` and `https`, matched case-insensitively. |
+| `min_score` | float | Keeps proxies whose `quality.score` is greater than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
+| `min_success_rate` | float | Keeps proxies whose `quality.success_rate` is greater than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
+| `country` | string | Filters by `network.country_code`, matched case-insensitively. |
+| `anonymous` | string boolean | Filters by `network.anonymous`. Use `true` or `false`. |
+| `limit` | integer | Limits the number of returned items. Values must be positive and are capped at `1000`. |
+
+## Proxy Item Fields
+
+Each item describes one checked proxy endpoint.
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `endpoint` | string | Proxy endpoint as `ip:port`. |
+| `source_protocol` | string | Protocol used to connect to the proxy candidate: `http`, `socks4`, or `socks5`. |
+| `usable_as` | array | Destination capabilities that passed checks through this proxy: `http`, `https`, or both. |
+| `quality.score` | float | Quality score from `0.0` to `100.0`, based on success rate, HTTPS capability, anonymity, and latency. |
+| `quality.success_rate` | float | Successful attempts divided by total attempts, from `0.0` to `1.0`. |
+| `quality.checks_passed` | integer | Number of successful endpoint attempts. |
+| `quality.checks_failed` | integer | Number of failed endpoint attempts. |
+| `quality.avg_latency_ms` | integer | Average latency in milliseconds across successful attempts. |
+| `quality.last_error` | string or null | Most recent failed attempt error class or checker error message, when any attempt failed. |
+| `network.exit_ip` | string | IP address observed by a successful check endpoint. |
+| `network.country_code` | string | Country code reported by a successful check endpoint, or an empty string. |
+| `network.anonymous` | boolean | Whether a successful attempt observed an exit IP different from the candidate IP. |
+| `timestamps.checked_at` | string | UTC timestamp for the check cycle that produced the item. |
+
+`source_protocol` and `usable_as` are intentionally separate. A proxy may be discovered as a SOCKS5 proxy while still being usable for HTTP and HTTPS destinations through the SOCKS connector.
+
+## `GET /stats`
+
+Returns aggregate information for the current stored v2 document.
 
 Example response:
 
 ```json
-[
-  {
-    "address": "1.2.3.4:8080",
-    "countryCode": "US",
-    "is_anonymous": true,
-    "timeout": 0.42,
-    "score": 90.8,
-    "success_rate": 1.0,
-    "success_count": 4,
-    "failure_count": 0,
-    "supports_http": true,
-    "supports_https": true,
-    "avg_timeout": 0.42,
-    "last_error": null,
-    "checked_at": "2026-05-22T12:00:00Z",
-    "prototype": "http"
+{
+  "total": 2,
+  "by_source_protocol": {
+    "http": 1,
+    "socks4": 0,
+    "socks5": 1
+  },
+  "by_capability": {
+    "http": 2,
+    "https": 1
+  },
+  "last_refresh": {
+    "started_at": "2026-05-22T12:00:00Z",
+    "finished_at": "2026-05-22T12:00:05Z",
+    "duration_seconds": 5.0,
+    "proxies_alive": 2
   }
-]
+}
 ```
 
-## Proxy Quality Fields
-
-Checked proxy rows include the legacy fields plus quality metadata:
-
-| Field | Type | Description |
-| --- | --- | --- |
-| `score` | float | Quality score from `0.0` to `100.0`, based on success rate, HTTPS support, anonymity, and latency. |
-| `success_rate` | float | Successful attempts divided by total attempts, from `0.0` to `1.0`. |
-| `success_count` | integer | Number of successful endpoint attempts. |
-| `failure_count` | integer | Number of failed endpoint attempts. |
-| `supports_http` | boolean | Whether at least one HTTP endpoint attempt succeeded. |
-| `supports_https` | boolean | Whether at least one HTTPS endpoint attempt succeeded. |
-| `avg_timeout` | float | Average timeout in seconds across successful attempts. |
-| `last_error` | string or null | Most recent failed attempt error class or checker error message, when any attempt failed. |
-| `checked_at` | string | UTC timestamp for the check cycle that produced the row. |
-
-## Query Parameters
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `prototypes` | comma-separated string | Filters by protocol. Values are matched case-insensitively against `http`, `socks4`, and `socks5`. |
-| `countrycodes` | comma-separated string | Filters by `countryCode`, case-insensitively. |
-| `isanonymous` | string boolean | Filters by `is_anonymous`. Use `true` or `false`. |
-| `maxtimeout` | float | Keeps proxies whose `timeout` is less than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
-| `minscore` | float | Keeps proxies whose `score` is greater than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
-| `supportshttps` | string boolean | Filters by `supports_https`. Use `true` or `false`. |
-| `minsuccessrate` | float | Keeps proxies whose `success_rate` is greater than or equal to the supplied value. `nan`, `inf`, and `-inf` are rejected with HTTP 422. |
-
-Filters are combined with AND semantics.
+If no scheduler refresh metadata exists yet, `last_refresh.started_at`, `last_refresh.finished_at`, and `last_refresh.duration_seconds` are `null`, and `last_refresh.proxies_alive` is `0`.
 
 ## `GET /health`
 

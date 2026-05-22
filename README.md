@@ -49,9 +49,10 @@ The Docker image runs as the non-root `proxypool` user and persists results in t
 
 ## API Summary
 
-- `GET /` returns the full proxy JSON document when no filters are supplied.
-- `GET /` with filters returns a flattened list of matching proxy rows.
-- Supported filters are `prototypes`, `countrycodes`, `isanonymous`, `maxtimeout`, `minscore`, `supportshttps`, and `minsuccessrate`.
+- `GET /proxies` returns the current v2 proxy list as `{ "total": number, "items": [...] }`.
+- `GET /` returns the same v2 shape as `GET /proxies`.
+- Supported filters are `source_protocol`, `usable_as`, `min_score`, `min_success_rate`, `country`, `anonymous`, and `limit`.
+- `GET /stats` returns totals by source protocol and usable capability plus last refresh metadata.
 - `GET /health` returns service health, storage path/existence, and scheduler fields.
 
 ## Documentation
