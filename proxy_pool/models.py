@@ -188,7 +188,7 @@ def empty_proxy_document(generated_at: str = "") -> ProxyDocument:
 
 
 def checked_proxy_to_item(proxy: CheckedProxy) -> ProxyItem:
-    if not proxy.endpoint:
+    if not valid_endpoint(proxy.endpoint):
         raise ValueError("CheckedProxy endpoint is required for v2 item")
     if proxy.source_protocol not in ("http", "socks4", "socks5"):
         raise ValueError("CheckedProxy source_protocol is invalid for v2 item")
@@ -246,6 +246,18 @@ def checked_proxy_to_json(proxy: CheckedProxy) -> ProxyJsonItem:
         "last_error": proxy.last_error,
         "checked_at": proxy.checked_at,
     }
+
+
+def valid_endpoint(value: str) -> bool:
+    host, separator, port = value.rpartition(":")
+    if not separator or not host or not port:
+        return False
+    try:
+        ip_address(host)
+        port_number = int(port)
+    except ValueError:
+        return False
+    return 0 <= port_number <= 65535
 
 
 def _clamp_float(value: float, minimum: float, maximum: float, default: float) -> float:

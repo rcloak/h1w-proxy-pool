@@ -17,6 +17,7 @@ from proxy_pool.models import (
     ProxyJsonItem,
     empty_proxy_document,
     empty_proxy_json,
+    valid_endpoint,
 )
 
 
@@ -48,7 +49,7 @@ def _normalize_proxy_item(item: object) -> ProxyItem | None:
     network = item.get("network")
     timestamps = item.get("timestamps")
 
-    if not isinstance(endpoint, str) or not endpoint:
+    if not isinstance(endpoint, str) or not valid_endpoint(endpoint):
         return None
     if source_protocol not in ("http", "socks4", "socks5"):
         return None

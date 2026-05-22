@@ -204,6 +204,43 @@ def test_read_proxy_document_drops_item_with_invalid_exit_ip(tmp_path: Path):
     assert read_proxy_document(target) == empty_proxy_document(generated_at="2026-05-22T12:00:00Z")
 
 
+def test_read_proxy_document_drops_item_with_invalid_endpoint(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_text(
+        """
+{
+  "version": 2,
+  "generated_at": "2026-05-22T12:00:00Z",
+  "total": 1,
+  "items": [
+    {
+      "endpoint": "not-an-endpoint",
+      "source_protocol": "http",
+      "usable_as": ["http"],
+      "quality": {
+        "score": 90.8,
+        "success_rate": 1.0,
+        "checks_passed": 2,
+        "checks_failed": 0,
+        "avg_latency_ms": 420,
+        "last_error": null
+      },
+      "network": {
+        "exit_ip": "8.8.8.8",
+        "country_code": "US",
+        "anonymous": true
+      },
+      "timestamps": {"checked_at": "2026-05-22T12:00:00Z"}
+    }
+  ]
+}
+""".strip(),
+        encoding="utf-8",
+    )
+
+    assert read_proxy_document(target) == empty_proxy_document(generated_at="2026-05-22T12:00:00Z")
+
+
 def test_write_proxy_document_normalizes_invalid_generated_at_to_empty_string(tmp_path: Path):
     target = tmp_path / "proxies.json"
     payload = empty_proxy_document(generated_at="2026-05-22T12:00:00Z")

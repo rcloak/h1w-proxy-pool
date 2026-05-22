@@ -246,6 +246,27 @@ def test_checked_proxy_to_item_rejects_incomplete_legacy_proxy():
         checked_proxy_to_item(proxy)
 
 
+def test_checked_proxy_to_item_rejects_invalid_endpoint():
+    proxy = CheckedProxy(
+        endpoint="not-an-endpoint",
+        source_protocol="http",
+        usable_as=("http",),
+        exit_ip="8.8.8.8",
+        country_code="US",
+        anonymous=True,
+        score=90.8,
+        success_rate=1.0,
+        checks_passed=2,
+        checks_failed=0,
+        avg_latency_ms=420,
+        last_error=None,
+        checked_at="2026-05-22T12:00:00Z",
+    )
+
+    with pytest.raises(ValueError):
+        checked_proxy_to_item(proxy)
+
+
 def test_load_config_reads_checker_settings(tmp_path: Path):
     config_file = tmp_path / "config.ini"
     config_file.write_text(
