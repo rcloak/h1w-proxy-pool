@@ -15,9 +15,34 @@ from proxy_pool.config import CheckerSettings
 from proxy_pool.models import CheckedProxy, ProxyCandidate
 
 
+def make_checked_proxy(
+    endpoint: str,
+    *,
+    score: float = 0.0,
+    avg_latency_ms: int = 0,
+    country_code: str = "US",
+    anonymous: bool = True,
+) -> CheckedProxy:
+    return CheckedProxy(
+        endpoint=endpoint,
+        source_protocol="http",
+        usable_as=("http",),
+        exit_ip="8.8.8.8",
+        country_code=country_code,
+        anonymous=anonymous,
+        score=score,
+        success_rate=1.0,
+        checks_passed=1,
+        checks_failed=0,
+        avg_latency_ms=avg_latency_ms,
+        last_error=None,
+        checked_at="2026-05-22T12:00:00Z",
+    )
+
+
 def test_sort_checked_sorts_by_timeout():
-    slow = CheckedProxy(endpoint="1.2.3.4:80", country_code="US", anonymous=True, avg_latency_ms=1100)
-    fast = CheckedProxy(endpoint="5.6.7.8:1080", country_code="DE", anonymous=False, avg_latency_ms=200)
+    slow = make_checked_proxy("1.2.3.4:80", country_code="US", anonymous=True, avg_latency_ms=1100)
+    fast = make_checked_proxy("5.6.7.8:1080", country_code="DE", anonymous=False, avg_latency_ms=200)
 
     result = sort_checked([slow, fast], sort_by_speed=True)
 
@@ -26,9 +51,9 @@ def test_sort_checked_sorts_by_timeout():
 
 def test_sort_checked_prefers_score_then_timeout_then_address():
     proxies = [
-        CheckedProxy(endpoint="2.2.2.2:80", country_code="US", anonymous=True, score=90.0, avg_latency_ms=100),
-        CheckedProxy(endpoint="1.1.1.1:80", country_code="US", anonymous=True, score=95.0, avg_latency_ms=200),
-        CheckedProxy(endpoint="3.3.3.3:80", country_code="US", anonymous=True, score=90.0, avg_latency_ms=300),
+        make_checked_proxy("2.2.2.2:80", country_code="US", anonymous=True, score=90.0, avg_latency_ms=100),
+        make_checked_proxy("1.1.1.1:80", country_code="US", anonymous=True, score=95.0, avg_latency_ms=200),
+        make_checked_proxy("3.3.3.3:80", country_code="US", anonymous=True, score=90.0, avg_latency_ms=300),
     ]
 
     assert [proxy.endpoint for proxy in sort_checked(proxies, sort_by_speed=True)] == [
@@ -39,9 +64,9 @@ def test_sort_checked_prefers_score_then_timeout_then_address():
 
 
 def test_sort_checked_sorts_by_natural_address():
-    high_port = CheckedProxy(endpoint="1.2.3.4:100", country_code="US", anonymous=True, avg_latency_ms=100)
-    later_ip = CheckedProxy(endpoint="1.2.3.10:80", country_code="US", anonymous=True, avg_latency_ms=100)
-    low_port = CheckedProxy(endpoint="1.2.3.4:80", country_code="US", anonymous=True, avg_latency_ms=100)
+    high_port = make_checked_proxy("1.2.3.4:100", country_code="US", anonymous=True, avg_latency_ms=100)
+    later_ip = make_checked_proxy("1.2.3.10:80", country_code="US", anonymous=True, avg_latency_ms=100)
+    low_port = make_checked_proxy("1.2.3.4:80", country_code="US", anonymous=True, avg_latency_ms=100)
 
     result = sort_checked([high_port, later_ip, low_port], sort_by_speed=False)
 

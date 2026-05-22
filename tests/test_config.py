@@ -234,16 +234,13 @@ def test_checked_proxy_to_item_clamps_quality_values():
     }
 
 
-def test_checked_proxy_to_item_rejects_incomplete_legacy_proxy():
-    proxy = CheckedProxy(
-        address="1.2.3.4:8080",
-        country_code="US",
-        is_anonymous=True,
-        timeout=0.42,
-    )
-
-    with pytest.raises(ValueError):
-        checked_proxy_to_item(proxy)
+def test_checked_proxy_requires_v2_constructor_fields():
+    with pytest.raises(TypeError):
+        CheckedProxy(
+            endpoint="1.2.3.4:8080",
+            source_protocol="http",
+            usable_as=("http",),
+        )
 
 
 def test_checked_proxy_to_item_rejects_invalid_endpoint():

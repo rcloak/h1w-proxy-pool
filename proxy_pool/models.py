@@ -16,7 +16,7 @@ class ProxyCandidate:
     ip: str
 
 
-@dataclass(init=False, slots=True)
+@dataclass(slots=True)
 class CheckedProxy:
     endpoint: str
     source_protocol: Protocol
@@ -31,93 +31,6 @@ class CheckedProxy:
     avg_latency_ms: int
     last_error: str | None
     checked_at: str
-
-    def __init__(
-        self,
-        endpoint: str | None = None,
-        source_protocol: Protocol = "http",
-        usable_as: tuple[Capability, ...] | None = None,
-        exit_ip: str = "",
-        country_code: str = "",
-        anonymous: bool | None = None,
-        score: float = 0.0,
-        success_rate: float = 0.0,
-        checks_passed: int | None = None,
-        checks_failed: int | None = None,
-        avg_latency_ms: int | None = None,
-        last_error: str | None = None,
-        checked_at: str = "",
-        *,
-        address: str | None = None,
-        is_anonymous: bool | None = None,
-        timeout: float | None = None,
-        success_count: int | None = None,
-        failure_count: int | None = None,
-        supports_http: bool = False,
-        supports_https: bool = False,
-        avg_timeout: float | None = None,
-    ) -> None:
-        resolved_endpoint = endpoint if endpoint is not None else address
-        if resolved_endpoint is None:
-            raise TypeError("CheckedProxy requires endpoint")
-
-        if usable_as is None:
-            capabilities: list[Capability] = []
-            if supports_http:
-                capabilities.append("http")
-            if supports_https:
-                capabilities.append("https")
-            usable_as = tuple(capabilities)
-
-        latency_seconds = avg_timeout if avg_timeout is not None else timeout
-        if avg_latency_ms is None:
-            avg_latency_ms = int(round((latency_seconds or 0.0) * 1000))
-
-        self.endpoint = resolved_endpoint
-        self.source_protocol = source_protocol
-        self.usable_as = usable_as
-        self.exit_ip = exit_ip
-        self.country_code = country_code
-        self.anonymous = bool(anonymous if anonymous is not None else is_anonymous)
-        self.score = score
-        self.success_rate = success_rate
-        self.checks_passed = checks_passed if checks_passed is not None else (success_count or 0)
-        self.checks_failed = checks_failed if checks_failed is not None else (failure_count or 0)
-        self.avg_latency_ms = avg_latency_ms
-        self.last_error = last_error
-        self.checked_at = checked_at
-
-    @property
-    def address(self) -> str:
-        return self.endpoint
-
-    @property
-    def is_anonymous(self) -> bool:
-        return self.anonymous
-
-    @property
-    def timeout(self) -> float:
-        return self.avg_latency_ms / 1000
-
-    @property
-    def success_count(self) -> int:
-        return self.checks_passed
-
-    @property
-    def failure_count(self) -> int:
-        return self.checks_failed
-
-    @property
-    def supports_http(self) -> bool:
-        return "http" in self.usable_as
-
-    @property
-    def supports_https(self) -> bool:
-        return "https" in self.usable_as
-
-    @property
-    def avg_timeout(self) -> float:
-        return self.avg_latency_ms / 1000
 
 
 class ProxyQuality(TypedDict):
