@@ -15,11 +15,20 @@ from proxy_pool.scheduler import scheduler_loop
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    app.state.last_scheduler_error = None
+
     if app.state.start_scheduler and app.state.settings is not None:
+        def record_scheduler_error(exc: Exception) -> None:
+            app.state.last_scheduler_error = str(exc)
+
         stop_event = asyncio.Event()
         app.state.scheduler_stop_event = stop_event
         app.state.scheduler_task = asyncio.create_task(
-            scheduler_loop(app.state.settings, stop_event)
+            scheduler_loop(
+                app.state.settings,
+                stop_event,
+                on_error=record_scheduler_error,
+            )
         )
     else:
         app.state.scheduler_task = None

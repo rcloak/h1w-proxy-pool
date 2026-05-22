@@ -65,11 +65,17 @@ def root(
 @router.get("/health")
 def health(request: Request) -> dict[str, object]:
     result_path: Path = request.app.state.result_path
-    return {
+    payload: dict[str, object] = {
         "status": "ok",
         "storage_path": str(result_path),
         "storage_exists": result_path.exists(),
     }
+    if hasattr(request.app.state, "scheduler_task"):
+        task = request.app.state.scheduler_task
+        payload["scheduler_running"] = task is not None and not task.done()
+    if hasattr(request.app.state, "last_scheduler_error"):
+        payload["last_scheduler_error"] = request.app.state.last_scheduler_error
+    return payload
 
 
 def _split_filter(value: str | None) -> set[str] | None:
