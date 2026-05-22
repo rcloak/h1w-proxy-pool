@@ -268,6 +268,70 @@ async def test_scheduler_preserves_refresh_progress_on_error(monkeypatch, tmp_pa
     assert progress_updates[1]["current_protocol"] == "http"
 
 
+async def test_scheduler_uses_consistent_success_progress_without_pipeline_progress(monkeypatch, tmp_path: Path):
+    settings = make_settings(tmp_path, refresh_interval_seconds=0)
+    stop_event = scheduler_module.asyncio.Event()
+    progress_updates = []
+
+    async def run_pipeline(settings, on_progress=None):
+        stop_event.set()
+        return {"version": 2, "generated_at": "2026-05-22T12:00:00Z", "total": 2, "items": []}
+
+    monkeypatch.setattr(scheduler_module, "run_pipeline", run_pipeline)
+
+    await scheduler_module.scheduler_loop(
+        settings,
+        stop_event,
+        on_progress=progress_updates.append,
+    )
+
+    assert progress_updates == [
+        {
+            "status": "idle",
+            "started_at": progress_updates[0]["started_at"],
+            "finished_at": progress_updates[0]["finished_at"],
+            "checked": 2,
+            "total": 2,
+            "alive": 2,
+            "current_protocol": None,
+        }
+    ]
+    assert progress_updates[0]["started_at"] is not None
+    assert progress_updates[0]["finished_at"] is not None
+
+
+async def test_scheduler_uses_started_at_for_failure_before_pipeline_progress(monkeypatch, tmp_path: Path):
+    settings = make_settings(tmp_path, refresh_interval_seconds=60)
+    stop_event = scheduler_module.asyncio.Event()
+    progress_updates = []
+
+    async def run_pipeline(settings, on_progress=None):
+        stop_event.set()
+        raise RuntimeError("refresh failed")
+
+    monkeypatch.setattr(scheduler_module, "run_pipeline", run_pipeline)
+
+    await scheduler_module.scheduler_loop(
+        settings,
+        stop_event,
+        on_progress=progress_updates.append,
+    )
+
+    assert progress_updates == [
+        {
+            "status": "failed",
+            "started_at": progress_updates[0]["started_at"],
+            "finished_at": progress_updates[0]["finished_at"],
+            "checked": 0,
+            "total": 0,
+            "alive": 0,
+            "current_protocol": None,
+        }
+    ]
+    assert progress_updates[0]["started_at"] is not None
+    assert progress_updates[0]["finished_at"] is not None
+
+
 def test_app_exposes_current_refresh_progress(monkeypatch, tmp_path: Path):
     settings = make_settings(tmp_path)
     refreshed = Event()

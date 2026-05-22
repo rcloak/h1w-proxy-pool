@@ -23,9 +23,11 @@ async def scheduler_loop(
 ) -> None:
     while not stop_event.is_set():
         last_progress = idle_refresh_progress()
+        progress_emitted = False
 
         def record_progress(progress: RefreshProgress) -> None:
-            nonlocal last_progress
+            nonlocal last_progress, progress_emitted
+            progress_emitted = True
             last_progress = dict(progress)
             if on_progress is not None:
                 on_progress(dict(progress))
@@ -41,8 +43,11 @@ async def scheduler_loop(
                 progress["status"] = "idle"
                 progress["started_at"] = progress["started_at"] or started.isoformat()
                 progress["finished_at"] = finished.isoformat()
-                if progress["checked"] == 0 and progress["total"] == 0 and progress["alive"] == 0:
-                    progress["alive"] = int(payload.get("total", 0))
+                if not progress_emitted:
+                    payload_total = int(payload.get("total", 0))
+                    progress["checked"] = payload_total
+                    progress["total"] = payload_total
+                    progress["alive"] = payload_total
                 progress["current_protocol"] = None
                 on_progress(progress)
         except Exception as exc:
@@ -52,6 +57,7 @@ async def scheduler_loop(
             if on_progress is not None:
                 failed = dict(last_progress)
                 failed["status"] = "failed"
+                failed["started_at"] = failed["started_at"] or started.isoformat()
                 failed["finished_at"] = datetime.now(UTC).isoformat()
                 on_progress(failed)
 

@@ -219,6 +219,15 @@ def test_stats_returns_v2_counts_and_default_refresh_info(tmp_path: Path):
             "duration_seconds": None,
             "proxies_alive": 0,
         },
+        "current_refresh": {
+            "status": "idle",
+            "started_at": None,
+            "finished_at": None,
+            "checked": 0,
+            "total": 0,
+            "alive": 0,
+            "current_protocol": None,
+        },
     }
 
 
