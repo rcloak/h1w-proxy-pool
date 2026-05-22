@@ -4,11 +4,14 @@ from proxy_pool.checker import (
     CheckAttempt,
     _checked_proxy_from_response,
     aggregate_attempts,
+    build_attempt_plan,
     build_proxy_json,
     calculate_score,
+    endpoint_supports_capability,
     extract_observed_ip,
     sort_checked,
 )
+from proxy_pool.config import CheckerSettings
 from proxy_pool.models import CheckedProxy, ProxyCandidate
 
 
@@ -156,3 +159,29 @@ def test_aggregate_attempts_builds_quality_proxy():
     assert proxy.avg_timeout == 0.3
     assert proxy.timeout == 0.3
     assert proxy.last_error == "timeout"
+
+
+def test_endpoint_supports_capability_matches_scheme():
+    assert endpoint_supports_capability("http://example.test/ip", "http") is True
+    assert endpoint_supports_capability("http://example.test/ip", "https") is False
+    assert endpoint_supports_capability("https://example.test/ip", "https") is True
+
+
+def test_build_attempt_plan_repeats_enabled_capabilities_and_matching_endpoints():
+    checker = CheckerSettings(
+        endpoints=("http://example.test/ip", "https://example.test/ip"),
+        attempts_per_proxy=2,
+        required_successes=1,
+        check_http=True,
+        check_https=True,
+        min_success_rate=0.5,
+    )
+
+    plan = build_attempt_plan(ProxyCandidate(address="1.2.3.4:80", ip="1.2.3.4"), checker)
+
+    assert [(item.capability, item.endpoint) for item in plan] == [
+        ("http", "http://example.test/ip"),
+        ("https", "https://example.test/ip"),
+        ("http", "http://example.test/ip"),
+        ("https", "https://example.test/ip"),
+    ]

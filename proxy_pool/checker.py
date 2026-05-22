@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from ipaddress import ip_address
 from time import perf_counter
 from typing import Any
@@ -10,7 +11,7 @@ from typing import Any
 from aiohttp import ClientSession
 from aiohttp_socks import ProxyConnector
 
-from proxy_pool.config import Settings, load_config
+from proxy_pool.config import CheckerSettings, Settings, load_config
 from proxy_pool.models import (
     CheckedProxy,
     Protocol,
@@ -23,8 +24,13 @@ from proxy_pool.sources import collect_candidates
 from proxy_pool.storage import write_proxy_json
 
 
-CHECK_URL = "http://ip-api.com/json/?fields=8219"
 PROTOCOLS: tuple[Protocol, ...] = ("http", "socks4", "socks5")
+
+
+@dataclass(frozen=True, slots=True)
+class PlannedAttempt:
+    capability: str
+    endpoint: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +56,33 @@ def extract_observed_ip(data: Mapping[str, Any]) -> tuple[str, str] | None:
 
     country_code = data.get("countryCode")
     return observed, country_code if isinstance(country_code, str) else ""
+
+
+def endpoint_supports_capability(endpoint: str, capability: str) -> bool:
+    if capability == "http":
+        return endpoint.startswith("http://")
+    if capability == "https":
+        return endpoint.startswith("https://")
+    return False
+
+
+def build_attempt_plan(
+    candidate: ProxyCandidate,
+    checker: CheckerSettings,
+) -> tuple[PlannedAttempt, ...]:
+    capabilities: list[str] = []
+    if checker.check_http:
+        capabilities.append("http")
+    if checker.check_https:
+        capabilities.append("https")
+
+    attempts: list[PlannedAttempt] = []
+    for _ in range(checker.attempts_per_proxy):
+        for capability in capabilities:
+            for endpoint in checker.endpoints:
+                if endpoint_supports_capability(endpoint, capability):
+                    attempts.append(PlannedAttempt(capability=capability, endpoint=endpoint))
+    return tuple(attempts)
 
 
 def calculate_score(
@@ -115,26 +148,56 @@ def aggregate_attempts(
     )
 
 
+async def run_attempt(
+    candidate: ProxyCandidate,
+    protocol: Protocol,
+    endpoint: str,
+    capability: str,
+    timeout: float,
+) -> CheckAttempt:
+    start = perf_counter()
+    try:
+        connector = ProxyConnector.from_url(f"{protocol}://{candidate.address}")
+        async with ClientSession(connector=connector) as session:
+            async with session.get(
+                endpoint,
+                timeout=timeout,
+                raise_for_status=True,
+            ) as response:
+                data = await response.json()
+        parsed = extract_observed_ip(data)
+        if parsed is None:
+            return CheckAttempt(False, capability, None, "", None, "missing observed ip")
+        observed_ip, country_code = parsed
+        return CheckAttempt(True, capability, observed_ip, country_code, perf_counter() - start, None)
+    except Exception as exc:
+        return CheckAttempt(False, capability, None, "", None, type(exc).__name__)
+
+
 async def check_candidate(
     candidate: ProxyCandidate,
     protocol: Protocol,
     timeout: float,
     semaphore: asyncio.Semaphore,
+    checker: CheckerSettings,
+    checked_at: str,
 ) -> CheckedProxy | None:
+    attempt_plan = build_attempt_plan(candidate, checker)
     async with semaphore:
-        start = perf_counter()
-        try:
-            connector = ProxyConnector.from_url(f"{protocol}://{candidate.address}")
-            async with ClientSession(connector=connector) as session:
-                async with session.get(
-                    CHECK_URL,
-                    timeout=timeout,
-                    raise_for_status=True,
-                ) as response:
-                    data = await response.json()
-            return _checked_proxy_from_response(candidate, data, perf_counter() - start)
-        except Exception:
-            return None
+        attempts = await asyncio.gather(
+            *(
+                run_attempt(candidate, protocol, item.endpoint, item.capability, timeout)
+                for item in attempt_plan
+            )
+        )
+    return aggregate_attempts(
+        address=candidate.address,
+        candidate_ip=candidate.ip,
+        attempts=attempts,
+        required_successes=checker.required_successes,
+        min_success_rate=checker.min_success_rate,
+        checked_at=checked_at,
+    )
 
 
 def _checked_proxy_from_response(
@@ -183,11 +246,19 @@ async def run_pipeline(settings: Settings) -> ProxyJson:
     candidates = await collect_candidates(settings.sources)
     semaphore = asyncio.Semaphore(settings.max_connections)
     checked: dict[Protocol, list[CheckedProxy]] = {protocol: [] for protocol in PROTOCOLS}
+    checked_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
     for protocol, protocol_candidates in candidates.items():
         results = await asyncio.gather(
             *(
-                check_candidate(candidate, protocol, settings.timeout, semaphore)
+                check_candidate(
+                    candidate,
+                    protocol,
+                    settings.timeout,
+                    semaphore,
+                    settings.checker,
+                    checked_at,
+                )
                 for candidate in protocol_candidates
             )
         )
