@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from proxy_pool.config import load_config
-from proxy_pool.models import CheckedProxy, checked_proxy_to_json, empty_proxy_json
+from proxy_pool.models import CheckedProxy, checked_proxy_to_item, empty_proxy_document
 
 
 def test_load_config_reads_general_settings(tmp_path: Path):
@@ -167,99 +167,69 @@ Sources =
     assert settings.result_path == tmp_path / "proxies.json"
 
 
-def test_empty_proxy_json_returns_empty_schema():
-    assert empty_proxy_json() == {
-        "total_count_of_proxies": 0,
-        "http": [],
-        "socks4": [],
-        "socks5": [],
+def test_empty_proxy_document_returns_v2_schema():
+    assert empty_proxy_document(generated_at="2026-05-22T12:00:00Z") == {
+        "version": 2,
+        "generated_at": "2026-05-22T12:00:00Z",
+        "total": 0,
+        "items": [],
     }
 
 
-def test_checked_proxy_to_json_maps_country_code_to_camel_case():
-    proxy = CheckedProxy(
-        address="1.2.3.4:8080",
-        country_code="US",
-        is_anonymous=True,
-        timeout=0.42,
-    )
-
-    assert checked_proxy_to_json(proxy) == {
-        "address": "1.2.3.4:8080",
-        "countryCode": "US",
-        "is_anonymous": True,
-        "timeout": 0.42,
-        "score": 0.0,
-        "success_rate": 0.0,
-        "success_count": 0,
-        "failure_count": 0,
-        "supports_http": False,
-        "supports_https": False,
-        "avg_timeout": 0.42,
-        "last_error": None,
-        "checked_at": "",
-    }
-
-
-def test_checked_proxy_to_json_defaults_avg_timeout_to_timeout():
-    item = checked_proxy_to_json(
+def test_checked_proxy_to_item_returns_clean_v2_item():
+    item = checked_proxy_to_item(
         CheckedProxy(
-            address="1.2.3.4:80",
+            endpoint="1.2.3.4:8080",
+            source_protocol="http",
+            usable_as=("http", "https"),
+            exit_ip="8.8.8.8",
             country_code="US",
-            is_anonymous=True,
-            timeout=0.5,
-        )
-    )
-
-    assert item["avg_timeout"] == 0.5
-
-
-def test_checked_proxy_to_json_uses_defaults_for_non_finite_quality_floats():
-    item = checked_proxy_to_json(
-        CheckedProxy(
-            address="1.2.3.4:80",
-            country_code="US",
-            is_anonymous=True,
-            timeout=0.5,
-            score=float("inf"),
-            success_rate=float("nan"),
-            avg_timeout=float("inf"),
-        )
-    )
-
-    assert item["score"] == 0.0
-    assert item["success_rate"] == 0.0
-    assert item["avg_timeout"] == 0.5
-
-
-def test_checked_proxy_to_json_includes_quality_fields():
-    item = checked_proxy_to_json(
-        CheckedProxy(
-            address="1.2.3.4:80",
-            country_code="US",
-            is_anonymous=True,
-            timeout=0.5,
-            score=90.0,
+            anonymous=True,
+            score=90.8,
             success_rate=1.0,
-            success_count=4,
-            failure_count=0,
-            supports_http=True,
-            supports_https=True,
-            avg_timeout=0.5,
+            checks_passed=2,
+            checks_failed=0,
+            avg_latency_ms=420,
             last_error=None,
             checked_at="2026-05-22T12:00:00Z",
         )
     )
 
-    assert item["score"] == 90.0
-    assert item["success_rate"] == 1.0
-    assert item["success_count"] == 4
-    assert item["failure_count"] == 0
-    assert item["supports_http"] is True
-    assert item["supports_https"] is True
-    assert item["avg_timeout"] == 0.5
-    assert item["last_error"] is None
-    assert item["checked_at"] == "2026-05-22T12:00:00Z"
+    assert item["endpoint"] == "1.2.3.4:8080"
+    assert item["source_protocol"] == "http"
+    assert item["usable_as"] == ["http", "https"]
+    assert item["quality"]["score"] == 90.8
+    assert item["network"]["anonymous"] is True
+    assert item["timestamps"]["checked_at"] == "2026-05-22T12:00:00Z"
+
+
+def test_checked_proxy_to_item_clamps_quality_values():
+    item = checked_proxy_to_item(
+        CheckedProxy(
+            endpoint="1.2.3.4:8080",
+            source_protocol="http",
+            usable_as=("http",),
+            exit_ip="8.8.8.8",
+            country_code="US",
+            anonymous=True,
+            score=float("inf"),
+            success_rate=-1,
+            checks_passed=-2,
+            checks_failed=-3,
+            avg_latency_ms=-420,
+            last_error="failed",
+            checked_at="2026-05-22T12:00:00Z",
+        )
+    )
+
+    assert item["quality"] == {
+        "score": 0.0,
+        "success_rate": 0.0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "avg_latency_ms": 0,
+        "last_error": "failed",
+    }
 
 
 def test_load_config_reads_checker_settings(tmp_path: Path):
