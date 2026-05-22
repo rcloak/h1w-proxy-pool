@@ -13,7 +13,7 @@ Proxy Pool reads configuration from `config.ini` by default. The API service loa
 | `SortBySpeed` | boolean | `yes` | When enabled, output proxies are sorted by quality score, average latency, then endpoint. When disabled, they are sorted by endpoint. |
 | `SavePath` | path | directory containing `config.ini` | Directory where the result file is written. An empty value means the config file directory. Docker uses `/app/data`. |
 | `JsonResultFilename` | string | `proxies.json` | Result JSON filename. The effective path is `SavePath / JsonResultFilename`. |
-| `SaveFormat` | string | `json` | Configured output format. The current implementation writes JSON. |
+| `SaveFormat` | string | `json` | Configured output format. The current implementation writes only JSON; legacy folder output is not active. |
 | `RefreshIntervalSeconds` | integer | `900` | Seconds the API scheduler waits between scrape/check cycles. |
 
 Example:
@@ -31,7 +31,7 @@ RefreshIntervalSeconds = 900
 
 ## Source Sections
 
-Proxy sources are grouped by protocol in `[HTTP]`, `[SOCKS4]`, and `[SOCKS5]` sections.
+Proxy sources are grouped by source protocol in `[HTTP]`, `[SOCKS4]`, and `[SOCKS5]` sections. The section name becomes each item's `source_protocol` when a proxy from that section passes live checks.
 
 Each section supports:
 
@@ -60,7 +60,7 @@ Sources =
     https://example.test/socks5.txt
 ```
 
-Only enabled sections with at least one source URL are passed to the scrape/check pipeline.
+Only enabled sections with at least one source URL are passed to the scrape/check pipeline. Source lists may contain noise; the scraper extracts strict `ip:port` candidates and deduplicates them per protocol.
 
 ## Checker
 
@@ -90,7 +90,28 @@ CheckHttps = yes
 MinSuccessRate = 0.5
 ```
 
-Checker endpoints must return JSON containing an observed IP in `query`, `origin`, or `ip`. Country metadata is optional and is preserved in `network.country_code` when present.
+Checker endpoints must return JSON containing an observed IP in `query`, `origin`, or `ip`. Country metadata is optional and is preserved in `network.country_code` when present as `countryCode`.
+
+`CheckHttp` enables attempts against `http://` checker endpoints. `CheckHttps` enables attempts against `https://` checker endpoints. Successful HTTP attempts add `http` to `usable_as`; successful HTTPS attempts add `https` to `usable_as`.
+
+## Dead Cache
+
+`[DeadCache]` controls SQLite persistence for failed proxy checks. It is enabled by default when the section is absent.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `Enabled` | boolean | `yes` | Enables skipping recently failed proxies in later refreshes. |
+| `DatabasePath` | path | `SavePath / proxy_state.sqlite3` | SQLite database path. Docker uses `/app/data/proxy_state.sqlite3`. Empty value uses the default path. |
+
+Example:
+
+```ini
+[DeadCache]
+Enabled = yes
+DatabasePath = /app/data/proxy_state.sqlite3
+```
+
+The cache key is `source_protocol + endpoint`, so the same `ip:port` can have separate failure history for `http`, `socks4`, and `socks5`. Failed checks are skipped temporarily with backoff: 30 minutes, 2 hours, 6 hours, then 24 hours for later failures. Successful checks clear the cache row.
 
 ## Output Shape
 
@@ -106,6 +127,8 @@ The configured result file is written as a v2 proxy document:
 ```
 
 Each item includes `endpoint`, `source_protocol`, `usable_as`, `quality`, `network`, and `timestamps`. `source_protocol` is the protocol used to connect to the proxy candidate, while `usable_as` lists the HTTP and HTTPS destination capabilities that succeeded during checking.
+
+The API intentionally omits storage-only `version` and `generated_at` from list responses. `GET /` and `GET /proxies` return `{ "total", "items" }`.
 
 ## Folders Section
 

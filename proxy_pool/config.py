@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from configparser import ConfigParser, SectionProxy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from proxy_pool.models import Protocol
@@ -25,6 +25,12 @@ class CheckerSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DeadCacheSettings:
+    enabled: bool
+    database_path: Path
+
+
+@dataclass(frozen=True, slots=True)
 class Settings:
     config_path: Path
     timeout: float
@@ -36,6 +42,9 @@ class Settings:
     refresh_interval_seconds: int
     sources: dict[Protocol, tuple[str, ...]]
     checker: CheckerSettings
+    dead_cache: DeadCacheSettings = field(
+        default_factory=lambda: DeadCacheSettings(enabled=False, database_path=Path("proxy_state.sqlite3"))
+    )
 
     @property
     def result_path(self) -> Path:
@@ -54,6 +63,7 @@ def load_config(path: str | Path = "config.ini") -> Settings:
     save_path_value = general.get("SavePath", "").strip()
     save_path = Path(save_path_value) if save_path_value else config_path.parent
 
+    checker = _load_checker_settings(parser)
     return Settings(
         config_path=config_path,
         timeout=general.getfloat("Timeout", fallback=10),
@@ -64,7 +74,8 @@ def load_config(path: str | Path = "config.ini") -> Settings:
         save_format=general.get("SaveFormat", fallback="json"),
         refresh_interval_seconds=general.getint("RefreshIntervalSeconds", fallback=900),
         sources=_load_sources(parser),
-        checker=_load_checker_settings(parser),
+        checker=checker,
+        dead_cache=_load_dead_cache_settings(parser, save_path),
     )
 
 
@@ -116,6 +127,17 @@ def _load_checker_settings(parser: ConfigParser) -> CheckerSettings:
         check_https=True,
         min_success_rate=0.5,
     )
+
+
+def _load_dead_cache_settings(parser: ConfigParser, save_path: Path) -> DeadCacheSettings:
+    if not parser.has_section("DeadCache"):
+        return DeadCacheSettings(enabled=True, database_path=save_path / "proxy_state.sqlite3")
+
+    section = parser["DeadCache"]
+    enabled = _get_checker_bool(section, "Enabled", True)
+    database_path_value = section.get("DatabasePath", "").strip()
+    database_path = Path(database_path_value) if database_path_value else save_path / "proxy_state.sqlite3"
+    return DeadCacheSettings(enabled=enabled, database_path=database_path)
 
 
 def _get_checker_int(section: SectionProxy, option: str, fallback: int) -> int:

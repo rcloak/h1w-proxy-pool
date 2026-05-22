@@ -127,7 +127,9 @@ During a long refresh, inspect progress with:
 curl http://localhost:5000/stats
 ```
 
-`current_refresh.checked` should increase as batches complete. `GET /proxies` reads the latest verified result file, so its `total` can grow before the refresh finishes and before `current_refresh.status` returns to `idle`.
+`current_refresh.elapsed_seconds`, `current_refresh.progress_percent`, and `current_refresh.checked` should increase as batches complete. `GET /proxies` reads the latest verified result file, so its `total` can grow before the refresh finishes and before `current_refresh.status` returns to `idle`.
+
+`dead_cache` in `GET /stats` shows how many recently failed proxies are being skipped. `currently_skipped` should grow after failed checks are recorded and shrink as TTLs expire. The SQLite file is stored at `/app/data/proxy_state.sqlite3` with the Docker config.
 
 If the scheduler is not running:
 

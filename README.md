@@ -12,6 +12,7 @@ It reads public proxy source lists from `config.ini`, extracts `ip:port` candida
 - API filters for protocol, capability, score, success rate, country, anonymity, and limit.
 - Background refresh scheduler when the API service is running.
 - Atomic JSON writes so the API does not serve partially-written files.
+- SQLite dead-cache for recently failed proxies, so future refreshes skip known bad endpoints for a bounded TTL.
 - Docker image that runs as a non-root user and persists data in `/app/data`.
 
 ## Requirements
@@ -85,7 +86,7 @@ uv run pytest -v
 
 ## API Summary
 
-During a long refresh, `GET /proxies` continues to return the latest partial verified result file. Use `GET /stats` and its `current_refresh` object to watch `checked`, `total`, and `alive` counts advance as batches complete.
+During a long refresh, `GET /proxies` continues to return the latest partial verified result file. Use `GET /stats` and its `current_refresh` object to watch elapsed time, percent complete, and `checked`, `total`, and `alive` counts advance as batches complete.
 
 ### `GET /proxies`
 
@@ -152,10 +153,18 @@ Returns aggregate counts and refresh metadata:
     "status": "running",
     "started_at": "2026-05-22T12:05:00+00:00",
     "finished_at": null,
+    "elapsed_seconds": 843.2,
+    "progress_percent": 24.0,
     "checked": 120,
     "total": 500,
     "alive": 18,
     "current_protocol": "http"
+  },
+  "dead_cache": {
+    "enabled": true,
+    "stored": 81234,
+    "currently_skipped": 64000,
+    "expired_retryable": 17234
   }
 }
 ```
@@ -217,6 +226,7 @@ Main settings live in `config.ini`:
 - `[HTTP]`, `[SOCKS4]`, `[SOCKS5]`: enabled source URLs grouped by source protocol.
 - `[Checker] Endpoints`: external IP APIs used to verify proxies.
 - `[Checker] AttemptsPerProxy`, `RequiredSuccesses`, `CheckHttp`, `CheckHttps`, `MinSuccessRate`: quality-check policy.
+- `[DeadCache] Enabled` and `DatabasePath`: persist failed proxies in SQLite and skip them temporarily on later refreshes.
 
 See [Configuration](docs/configuration.md) for every field.
 

@@ -365,7 +365,10 @@ def test_app_exposes_current_refresh_progress(monkeypatch, tmp_path: Path):
         stats = client.get("/stats").json()
         health = client.get("/health").json()
 
-    assert stats["current_refresh"] == {
+    current_refresh = stats["current_refresh"]
+    assert current_refresh["elapsed_seconds"] >= 0
+    assert current_refresh["progress_percent"] == 10.0
+    assert current_refresh == {
         "status": "running",
         "started_at": "2026-05-22T12:00:00+00:00",
         "finished_at": None,
@@ -373,5 +376,7 @@ def test_app_exposes_current_refresh_progress(monkeypatch, tmp_path: Path):
         "total": 100,
         "alive": 3,
         "current_protocol": "http",
+        "elapsed_seconds": current_refresh["elapsed_seconds"],
+        "progress_percent": 10.0,
     }
     assert health["refresh_running"] is True

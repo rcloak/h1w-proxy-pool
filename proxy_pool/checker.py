@@ -12,6 +12,7 @@ from aiohttp import ClientSession
 from aiohttp_socks import ProxyConnector
 
 from proxy_pool.config import CheckerSettings, Settings, load_config
+from proxy_pool.dead_cache import DeadProxyCache
 from proxy_pool.models import (
     CheckedProxy,
     Protocol,
@@ -265,6 +266,7 @@ async def run_pipeline(
 ) -> ProxyDocument:
     candidates = await collect_candidates(settings.sources)
     semaphore = asyncio.Semaphore(settings.max_connections)
+    dead_cache = DeadProxyCache(settings.dead_cache.database_path) if settings.dead_cache.enabled else None
     checked: list[CheckedProxy] = []
     checked_at = datetime.now(UTC).isoformat().replace("+00:00", "Z")
     started_at = datetime.now(UTC).isoformat()
@@ -296,6 +298,16 @@ async def run_pipeline(
             key=lambda candidate: _natural_address_key(candidate.address),
         )
         for batch in _candidate_batches(ordered_candidates, effective_batch_size):
+            skipped_endpoints = (
+                dead_cache.get_skipped_endpoints(protocol, [candidate.address for candidate in batch], checked_at)
+                if dead_cache is not None
+                else set()
+            )
+            retryable_batch = [
+                candidate
+                for candidate in batch
+                if candidate.address not in skipped_endpoints
+            ]
             results = await asyncio.gather(
                 *(
                     check_candidate(
@@ -306,9 +318,17 @@ async def run_pipeline(
                         settings.checker,
                         checked_at,
                     )
-                    for candidate in batch
+                    for candidate in retryable_batch
                 )
             )
+            if dead_cache is not None:
+                successes = [result.endpoint for result in results if result is not None]
+                failures = {
+                    candidate.address: "check failed"
+                    for candidate, result in zip(retryable_batch, results, strict=True)
+                    if result is None
+                }
+                dead_cache.record_batch(protocol, successes=successes, failures=failures, now=checked_at)
             checked.extend(result for result in results if result is not None)
             checked_count += len(batch)
             sorted_proxies = sort_checked(checked, settings.sort_by_speed)

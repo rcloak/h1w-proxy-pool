@@ -6,6 +6,8 @@ from typing import Any, cast
 from fastapi.testclient import TestClient
 
 from proxy_pool.app import create_app
+from proxy_pool.config import DeadCacheSettings
+from proxy_pool.dead_cache import DeadProxyCache
 from proxy_pool.models import ProxyDocument, ProxyItem, empty_proxy_document
 from proxy_pool.storage import write_proxy_document
 
@@ -227,6 +229,14 @@ def test_stats_returns_v2_counts_and_default_refresh_info(tmp_path: Path):
             "total": 0,
             "alive": 0,
             "current_protocol": None,
+            "elapsed_seconds": None,
+            "progress_percent": 0.0,
+        },
+        "dead_cache": {
+            "enabled": False,
+            "stored": 0,
+            "currently_skipped": 0,
+            "expired_retryable": 0,
         },
     }
 
@@ -247,7 +257,97 @@ def test_stats_includes_idle_current_refresh(tmp_path: Path):
         "total": 0,
         "alive": 0,
         "current_protocol": None,
+        "elapsed_seconds": None,
+        "progress_percent": 0.0,
     }
+
+
+def test_stats_adds_running_refresh_metrics(tmp_path: Path):
+    path = tmp_path / "proxies.json"
+    write_document(path, [])
+    app = create_app(result_path=path, start_scheduler=False)
+
+    with TestClient(app) as client:
+        app.state.current_refresh = {
+            "status": "running",
+            "started_at": "2026-05-22T12:00:00+00:00",
+            "finished_at": None,
+            "checked": 25,
+            "total": 100,
+            "alive": 3,
+            "current_protocol": "http",
+        }
+        response = client.get("/stats")
+
+    current_refresh = response.json()["current_refresh"]
+    assert current_refresh["elapsed_seconds"] >= 0
+    assert current_refresh["progress_percent"] == 25.0
+
+
+def test_stats_adds_finished_refresh_metrics(tmp_path: Path):
+    path = tmp_path / "proxies.json"
+    write_document(path, [])
+    app = create_app(result_path=path, start_scheduler=False)
+
+    with TestClient(app) as client:
+        app.state.current_refresh = {
+            "status": "idle",
+            "started_at": "2026-05-22T12:00:00+00:00",
+            "finished_at": "2026-05-22T12:00:05+00:00",
+            "checked": 100,
+            "total": 100,
+            "alive": 5,
+            "current_protocol": None,
+        }
+        response = client.get("/stats")
+
+    current_refresh = response.json()["current_refresh"]
+    assert current_refresh["elapsed_seconds"] == 5.0
+    assert current_refresh["progress_percent"] == 100.0
+
+
+def test_stats_handles_invalid_refresh_metric_inputs(tmp_path: Path):
+    path = tmp_path / "proxies.json"
+    write_document(path, [])
+    app = create_app(result_path=path, start_scheduler=False)
+
+    with TestClient(app) as client:
+        app.state.current_refresh = {
+            "status": "running",
+            "started_at": "not-a-date",
+            "finished_at": None,
+            "checked": 0,
+            "total": 0,
+            "alive": 0,
+            "current_protocol": "http",
+        }
+        response = client.get("/stats")
+
+    current_refresh = response.json()["current_refresh"]
+    assert current_refresh["elapsed_seconds"] is None
+    assert current_refresh["progress_percent"] == 0.0
+
+
+def test_stats_returns_null_elapsed_for_terminal_refresh_with_invalid_finished_at(tmp_path: Path):
+    path = tmp_path / "proxies.json"
+    write_document(path, [])
+    app = create_app(result_path=path, start_scheduler=False)
+
+    with TestClient(app) as client:
+        app.state.current_refresh = {
+            "status": "failed",
+            "started_at": "2026-05-22T12:00:00+00:00",
+            "finished_at": "not-a-date",
+            "checked": 50,
+            "total": 100,
+            "alive": 2,
+            "current_protocol": "http",
+        }
+        response = client.get("/stats")
+
+    current_refresh = response.json()["current_refresh"]
+    assert current_refresh["elapsed_seconds"] is None
+    assert current_refresh["progress_percent"] == 50.0
 
 
 def test_stats_returns_last_refresh_from_app_state(tmp_path: Path):
@@ -271,6 +371,28 @@ def test_stats_returns_last_refresh_from_app_state(tmp_path: Path):
         "duration_seconds": 1.0,
         "proxies_alive": 2,
     }
+
+
+def test_stats_returns_dead_cache_stats_when_settings_exist(tmp_path: Path):
+    path = tmp_path / "proxies.json"
+    write_document(path, [])
+    app = create_app(result_path=path, start_scheduler=False)
+    app.state.settings = type(
+        "SettingsWithDeadCache",
+        (),
+        {"dead_cache": DeadCacheSettings(enabled=True, database_path=tmp_path / "proxy_state.sqlite3")},
+    )()
+    cache = DeadProxyCache(tmp_path / "proxy_state.sqlite3")
+    cache.record_failure("http", "1.2.3.4:80", "TimeoutError", "2026-05-22T23:00:00+00:00")
+
+    with TestClient(app) as client:
+        response = client.get("/stats")
+
+    assert response.status_code == 200
+    assert response.json()["dead_cache"]["enabled"] is True
+    assert response.json()["dead_cache"]["stored"] == 1
+    assert response.json()["dead_cache"]["currently_skipped"] == 1
+    assert response.json()["dead_cache"]["expired_retryable"] == 0
 
 
 def test_health_reports_storage_status(tmp_path: Path):

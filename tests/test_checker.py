@@ -13,7 +13,7 @@ from proxy_pool.checker import (
     run_pipeline,
     sort_checked,
 )
-from proxy_pool.config import DEFAULT_CHECK_ENDPOINTS, CheckerSettings, Settings
+from proxy_pool.config import DEFAULT_CHECK_ENDPOINTS, CheckerSettings, DeadCacheSettings, Settings
 from proxy_pool.models import CheckedProxy, ProxyCandidate
 from proxy_pool.storage import read_proxy_document
 
@@ -273,6 +273,23 @@ def make_settings(tmp_path: Path) -> Settings:
     )
 
 
+def make_dead_cache_settings(tmp_path: Path) -> Settings:
+    settings = make_settings(tmp_path)
+    return Settings(
+        config_path=settings.config_path,
+        timeout=settings.timeout,
+        max_connections=settings.max_connections,
+        sort_by_speed=settings.sort_by_speed,
+        save_path=settings.save_path,
+        json_result_filename=settings.json_result_filename,
+        save_format=settings.save_format,
+        refresh_interval_seconds=settings.refresh_interval_seconds,
+        sources=settings.sources,
+        checker=settings.checker,
+        dead_cache=DeadCacheSettings(enabled=True, database_path=tmp_path / "proxy_state.sqlite3"),
+    )
+
+
 async def test_run_pipeline_writes_partial_documents_after_each_batch(monkeypatch, tmp_path: Path):
     settings = make_settings(tmp_path)
     candidates = {
@@ -365,3 +382,91 @@ async def test_run_pipeline_reports_progress_for_batches(monkeypatch, tmp_path: 
     assert [update["checked"] for update in progress_updates[1:]] == [2, 3]
     assert progress_updates[-1]["alive"] == 3
     assert progress_updates[-1]["current_protocol"] == "http"
+
+
+async def test_run_pipeline_skips_dead_cached_candidates(monkeypatch, tmp_path: Path):
+    settings = make_dead_cache_settings(tmp_path)
+    from proxy_pool.dead_cache import DeadProxyCache
+
+    cache = DeadProxyCache(settings.dead_cache.database_path)
+    cache.record_failure("http", "1.1.1.1:80", "TimeoutError", "2026-05-22T23:00:00+00:00")
+    candidates = {
+        "http": {
+            ProxyCandidate(address="1.1.1.1:80", ip="1.1.1.1"),
+            ProxyCandidate(address="2.2.2.2:80", ip="2.2.2.2"),
+        }
+    }
+    checked_addresses: list[str] = []
+
+    async def fake_collect_candidates(sources):
+        return candidates
+
+    async def fake_check_candidate(candidate, protocol, timeout, semaphore, checker, checked_at):
+        checked_addresses.append(candidate.address)
+        return CheckedProxy(
+            endpoint=candidate.address,
+            source_protocol=protocol,
+            usable_as=("http",),
+            exit_ip="8.8.8.8",
+            country_code="US",
+            anonymous=True,
+            score=90.0,
+            success_rate=1.0,
+            checks_passed=1,
+            checks_failed=0,
+            avg_latency_ms=100,
+            last_error=None,
+            checked_at=checked_at,
+        )
+
+    monkeypatch.setattr("proxy_pool.checker.collect_candidates", fake_collect_candidates)
+    monkeypatch.setattr("proxy_pool.checker.check_candidate", fake_check_candidate)
+
+    await run_pipeline(settings, batch_size=2)
+
+    assert checked_addresses == ["2.2.2.2:80"]
+
+
+async def test_run_pipeline_records_dead_cache_failures_and_clears_successes(monkeypatch, tmp_path: Path):
+    settings = make_dead_cache_settings(tmp_path)
+    from proxy_pool.dead_cache import DeadProxyCache
+
+    cache = DeadProxyCache(settings.dead_cache.database_path)
+    cache.record_failure("http", "1.1.1.1:80", "TimeoutError", "2026-05-22T10:00:00+00:00")
+    candidates = {
+        "http": {
+            ProxyCandidate(address="1.1.1.1:80", ip="1.1.1.1"),
+            ProxyCandidate(address="2.2.2.2:80", ip="2.2.2.2"),
+        }
+    }
+
+    async def fake_collect_candidates(sources):
+        return candidates
+
+    async def fake_check_candidate(candidate, protocol, timeout, semaphore, checker, checked_at):
+        if candidate.address == "2.2.2.2:80":
+            return None
+        return CheckedProxy(
+            endpoint=candidate.address,
+            source_protocol=protocol,
+            usable_as=("http",),
+            exit_ip="8.8.8.8",
+            country_code="US",
+            anonymous=True,
+            score=90.0,
+            success_rate=1.0,
+            checks_passed=1,
+            checks_failed=0,
+            avg_latency_ms=100,
+            last_error=None,
+            checked_at=checked_at,
+        )
+
+    monkeypatch.setattr("proxy_pool.checker.collect_candidates", fake_collect_candidates)
+    monkeypatch.setattr("proxy_pool.checker.check_candidate", fake_check_candidate)
+
+    await run_pipeline(settings, batch_size=2)
+
+    refreshed_cache = DeadProxyCache(settings.dead_cache.database_path)
+    assert refreshed_cache.should_skip("http", "1.1.1.1:80", "2026-05-22T12:10:00+00:00") is False
+    assert refreshed_cache.should_skip("http", "2.2.2.2:80", "2026-05-22T12:10:00+00:00") is True

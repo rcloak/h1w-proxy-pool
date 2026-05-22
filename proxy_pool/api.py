@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import math
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 
+from proxy_pool.dead_cache import DeadProxyCache
 from proxy_pool.models import ProxyItem, idle_refresh_progress
 from proxy_pool.storage import read_proxy_document
 
@@ -82,6 +84,7 @@ def stats(request: Request) -> dict[str, Any]:
     current_refresh = getattr(request.app.state, "current_refresh", None)
     if not isinstance(current_refresh, dict):
         current_refresh = idle_refresh_progress()
+    current_refresh = _current_refresh_with_metrics(current_refresh)
 
     return {
         "total": payload["total"],
@@ -89,6 +92,7 @@ def stats(request: Request) -> dict[str, Any]:
         "by_capability": by_capability,
         "last_refresh": last_refresh,
         "current_refresh": current_refresh,
+        "dead_cache": _dead_cache_stats(request),
     }
 
 
@@ -109,6 +113,56 @@ def health(request: Request) -> dict[str, object]:
     if isinstance(current_refresh, dict):
         payload["refresh_running"] = current_refresh.get("status") == "running"
     return payload
+
+
+def _current_refresh_with_metrics(current_refresh: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(current_refresh)
+    enriched["elapsed_seconds"] = _refresh_elapsed_seconds(enriched)
+
+    checked = enriched.get("checked")
+    total = enriched.get("total")
+    if isinstance(checked, int) and isinstance(total, int) and total > 0:
+        enriched["progress_percent"] = round((checked / total) * 100.0, 2)
+    else:
+        enriched["progress_percent"] = 0.0
+    return enriched
+
+
+def _dead_cache_stats(request: Request) -> dict[str, object]:
+    settings = getattr(request.app.state, "settings", None)
+    dead_cache_settings = getattr(settings, "dead_cache", None)
+    if dead_cache_settings is None or not getattr(dead_cache_settings, "enabled", False):
+        return {"enabled": False, "stored": 0, "currently_skipped": 0, "expired_retryable": 0}
+
+    now = datetime.now(UTC).isoformat()
+    stats = DeadProxyCache(dead_cache_settings.database_path).stats(now)
+    return {"enabled": True, **stats}
+
+
+def _refresh_elapsed_seconds(progress: dict[str, Any]) -> float | None:
+    started_at = _parse_iso_datetime(progress.get("started_at"))
+    if started_at is None:
+        return None
+
+    if progress.get("status") == "running":
+        end = datetime.now(UTC)
+    else:
+        end = _parse_iso_datetime(progress.get("finished_at"))
+        if end is None:
+            return None
+    return round(max(0.0, (end - started_at).total_seconds()), 3)
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _apply_filters(

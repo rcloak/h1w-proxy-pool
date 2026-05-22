@@ -180,10 +180,18 @@ Example response:
     "status": "running",
     "started_at": "2026-05-22T12:05:00+00:00",
     "finished_at": null,
+    "elapsed_seconds": 843.2,
+    "progress_percent": 24.0,
     "checked": 120,
     "total": 500,
     "alive": 18,
     "current_protocol": "http"
+  },
+  "dead_cache": {
+    "enabled": true,
+    "stored": 81234,
+    "currently_skipped": 64000,
+    "expired_retryable": 17234
   }
 }
 ```
@@ -195,9 +203,9 @@ If no scheduler refresh metadata exists yet, `last_refresh.started_at`, `last_re
 `current_refresh` reports refresh progress state:
 
 - Initial idle before any refresh: `status: "idle"`, `started_at: null`, `finished_at: null`, `checked: 0`, `total: 0`, `alive: 0`, and `current_protocol: null`.
-- Running refresh: `status: "running"`; `checked`, `total`, and `alive` advance as batches complete; `finished_at` remains `null`.
-- Completed refresh: `status: "idle"` with final `checked`, `total`, and `alive` counts preserved, `finished_at` set, and `current_protocol: null`.
-- Failed refresh: `status: "failed"` with last known `checked`, `total`, and `alive` counts preserved and `finished_at` set.
+- Running refresh: `status: "running"`; `elapsed_seconds`, `progress_percent`, `checked`, `total`, and `alive` advance as batches complete; `finished_at` remains `null`.
+- Completed refresh: `status: "idle"` with final `elapsed_seconds`, `progress_percent`, `checked`, `total`, and `alive` counts preserved, `finished_at` set, and `current_protocol: null`.
+- Failed refresh: `status: "failed"` with `elapsed_seconds`, `progress_percent`, and last known `checked`, `total`, and `alive` counts preserved and `finished_at` set.
 
 `current_refresh` fields:
 
@@ -206,10 +214,21 @@ If no scheduler refresh metadata exists yet, `last_refresh.started_at`, `last_re
 | `status` | string | Refresh state: `idle`, `running`, or `failed`. |
 | `started_at` | string or null | UTC timestamp when the current refresh started. |
 | `finished_at` | string or null | UTC timestamp when the refresh completed or failed. `null` before the first terminal state and while running. |
+| `elapsed_seconds` | number or null | Seconds since `started_at` while running, or `finished_at - started_at` after completion/failure. `null` when timestamps are missing or invalid. |
+| `progress_percent` | number | `checked / total * 100`, rounded to two decimals. `0.0` when `total` is zero. |
 | `checked` | integer | Number of candidate proxies checked so far, or the final checked count after completion/failure. |
 | `total` | integer | Total candidate proxies expected in the current refresh, or the final total after completion/failure. |
 | `alive` | integer | Number of verified proxies found so far, or the final alive count after completion/failure. |
 | `current_protocol` | string or null | Source protocol currently being checked, last known protocol after failure, or `null` when initially idle or after successful completion. |
+
+`dead_cache` fields:
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `enabled` | boolean | Whether SQLite dead-cache filtering is enabled for refreshes. |
+| `stored` | integer | Number of failed proxy keys currently stored. |
+| `currently_skipped` | integer | Number of stored failures whose `skip_until` is still in the future. |
+| `expired_retryable` | integer | Number of stored failures whose TTL expired and can be retried. |
 
 ## `GET /health`
 

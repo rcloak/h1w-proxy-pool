@@ -96,6 +96,50 @@ Sources =
     assert settings.result_path == Path("/app/proxies.json")
 
 
+def test_load_config_defaults_dead_cache_to_save_path(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+SavePath =
+
+[HTTP]
+Enabled = no
+Sources =
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.dead_cache.enabled is True
+    assert settings.dead_cache.database_path == tmp_path / "proxy_state.sqlite3"
+
+
+def test_load_config_reads_dead_cache_settings(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+SavePath = /app/data
+
+[DeadCache]
+Enabled = no
+DatabasePath = /tmp/proxy_state.sqlite3
+
+[HTTP]
+Enabled = no
+Sources =
+""".strip(),
+        encoding="utf-8",
+    )
+
+    settings = load_config(config_file)
+
+    assert settings.dead_cache.enabled is False
+    assert settings.dead_cache.database_path == Path("/tmp/proxy_state.sqlite3")
+
+
 def test_load_config_accepts_fractional_timeout(tmp_path: Path):
     config_file = tmp_path / "config.ini"
     config_file.write_text(
