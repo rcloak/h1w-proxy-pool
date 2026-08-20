@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 import importlib
 import sys
 from pathlib import Path
@@ -383,7 +384,8 @@ def test_stats_returns_dead_cache_stats_when_settings_exist(tmp_path: Path):
         {"dead_cache": DeadCacheSettings(enabled=True, database_path=tmp_path / "proxy_state.sqlite3")},
     )()
     cache = DeadProxyCache(tmp_path / "proxy_state.sqlite3")
-    cache.record_failure("http", "1.2.3.4:80", "TimeoutError", "2026-05-22T23:00:00+00:00")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cache.record_failure("http", "1.2.3.4:80", "TimeoutError", now_iso)
 
     with TestClient(app) as client:
         response = client.get("/stats")

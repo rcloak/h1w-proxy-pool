@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta, timezone
 import asyncio
 from pathlib import Path
 
@@ -389,7 +390,8 @@ async def test_run_pipeline_skips_dead_cached_candidates(monkeypatch, tmp_path: 
     from proxy_pool.dead_cache import DeadProxyCache
 
     cache = DeadProxyCache(settings.dead_cache.database_path)
-    cache.record_failure("http", "1.1.1.1:80", "TimeoutError", "2026-05-22T23:00:00+00:00")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cache.record_failure("http", "1.1.1.1:80", "TimeoutError", now_iso)
     candidates = {
         "http": {
             ProxyCandidate(address="1.1.1.1:80", ip="1.1.1.1"),
@@ -432,7 +434,8 @@ async def test_run_pipeline_records_dead_cache_failures_and_clears_successes(mon
     from proxy_pool.dead_cache import DeadProxyCache
 
     cache = DeadProxyCache(settings.dead_cache.database_path)
-    cache.record_failure("http", "1.1.1.1:80", "TimeoutError", "2026-05-22T10:00:00+00:00")
+    past_iso = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    cache.record_failure("http", "1.1.1.1:80", "TimeoutError", past_iso)
     candidates = {
         "http": {
             ProxyCandidate(address="1.1.1.1:80", ip="1.1.1.1"),
@@ -468,5 +471,6 @@ async def test_run_pipeline_records_dead_cache_failures_and_clears_successes(mon
     await run_pipeline(settings, batch_size=2)
 
     refreshed_cache = DeadProxyCache(settings.dead_cache.database_path)
-    assert refreshed_cache.should_skip("http", "1.1.1.1:80", "2026-05-22T12:10:00+00:00") is False
-    assert refreshed_cache.should_skip("http", "2.2.2.2:80", "2026-05-22T12:10:00+00:00") is True
+    now_iso = datetime.now(timezone.utc).isoformat()
+    assert refreshed_cache.should_skip("http", "1.1.1.1:80", now_iso) is False
+    assert refreshed_cache.should_skip("http", "2.2.2.2:80", now_iso) is True

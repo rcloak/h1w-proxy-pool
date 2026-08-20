@@ -23,7 +23,12 @@ PROXY_PATTERN = re.compile(
     + r")(?!\d)"
 )
 
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; rv:107.0) Gecko/20100101 Firefox/107.0"
+DEFAULT_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+}
+USER_AGENT = DEFAULT_HEADERS["User-Agent"]
 
 
 def extract_proxy_candidates(text: str) -> tuple[ProxyCandidate, ...]:
@@ -41,8 +46,12 @@ def extract_proxy_candidates(text: str) -> tuple[ProxyCandidate, ...]:
 
 
 async def fetch_source(session: ClientSession, url: str, timeout: float = 15) -> str:
-    async with session.get(url, timeout=timeout, raise_for_status=True) as response:
-        return await response.text()
+    try:
+        async with session.get(url, timeout=timeout, raise_for_status=True) as response:
+            return await response.text(errors="ignore")
+    except Exception:
+        async with session.get(url, timeout=timeout, ssl=False, raise_for_status=True) as response:
+            return await response.text(errors="ignore")
 
 
 async def collect_candidates(
@@ -50,7 +59,7 @@ async def collect_candidates(
 ) -> dict[Protocol, set[ProxyCandidate]]:
     results: dict[Protocol, set[ProxyCandidate]] = {protocol: set() for protocol in sources}
 
-    async with ClientSession(headers={"User-Agent": USER_AGENT}) as session:
+    async with ClientSession(headers=DEFAULT_HEADERS) as session:
         async def fetch_one(protocol: Protocol, url: str) -> None:
             try:
                 text = await fetch_source(session, url)
