@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import re
+import ssl
 from collections.abc import Mapping
 
+import aiohttp
 from aiohttp import ClientSession
 
 from proxy_pool.models import Protocol, ProxyCandidate
-
-
 PROXY_PATTERN = re.compile(
     r"(?<![\d.])(("
     + r"(?:[1-9]|[1-9]\d|1\d{2}|2[0-4]\d|25[0-5])"
@@ -31,28 +32,35 @@ DEFAULT_HEADERS = {
 USER_AGENT = DEFAULT_HEADERS["User-Agent"]
 
 
+def is_global_ip(ip_str: str) -> bool:
+    try:
+        addr = ipaddress.ip_address(ip_str)
+        return addr.is_global
+    except ValueError:
+        return False
+
+
 def extract_proxy_candidates(text: str) -> tuple[ProxyCandidate, ...]:
     candidates: list[ProxyCandidate] = []
     seen: set[str] = set()
 
     for match in PROXY_PATTERN.finditer(text):
         address = match.group(1)
-        if address in seen:
+        ip_str = match.group(2)
+        if address in seen or not is_global_ip(ip_str):
             continue
         seen.add(address)
-        candidates.append(ProxyCandidate(address=address, ip=match.group(2)))
+        candidates.append(ProxyCandidate(address=address, ip=ip_str))
 
     return tuple(candidates)
-
 
 async def fetch_source(session: ClientSession, url: str, timeout: float = 15) -> str:
     try:
         async with session.get(url, timeout=timeout, raise_for_status=True) as response:
-            return await response.text(errors="ignore")
-    except Exception:
+            return await response.text(errors="replace")
+    except (aiohttp.ClientSSLError, ssl.SSLError):
         async with session.get(url, timeout=timeout, ssl=False, raise_for_status=True) as response:
-            return await response.text(errors="ignore")
-
+            return await response.text(errors="replace")
 
 async def collect_candidates(
     sources: Mapping[Protocol, tuple[str, ...]],

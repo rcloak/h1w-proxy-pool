@@ -331,6 +331,32 @@ def test_checked_proxy_to_item_rejects_invalid_endpoint(endpoint: str):
         checked_proxy_to_item(proxy)
 
 
+
+def test_valid_endpoint_supports_ipv6():
+    from proxy_pool.models import valid_endpoint
+    assert valid_endpoint("[2001:db8::1]:8080") is True
+    assert valid_endpoint("2001:db8::1:8080") is True
+    assert valid_endpoint("not-an-ip:8080") is False
+    assert valid_endpoint("1.2.3.4:80") is True
+
+def test_load_config_sanitizes_filename_and_clamps_bounds(tmp_path: Path):
+    config_file = tmp_path / "config.ini"
+    config_file.write_text(
+        """
+[General]
+Timeout = -5
+MaxConnections = -10
+RefreshIntervalSeconds = 0
+JsonResultFilename = ../../escape.json
+""".strip(),
+        encoding="utf-8",
+    )
+    settings = load_config(config_file)
+    assert settings.timeout == 0.1
+    assert settings.max_connections == 1
+    assert settings.refresh_interval_seconds == 1
+    assert settings.json_result_filename == "escape.json"
+    assert settings.result_path == tmp_path / "escape.json"
 def test_checked_proxy_to_item_rejects_zero_port_endpoint():
     proxy = CheckedProxy(
         endpoint="1.2.3.4:0",

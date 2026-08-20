@@ -15,6 +15,11 @@ class DeadCacheStats(TypedDict):
 
 
 BACKOFF_SECONDS = (30 * 60, 2 * 60 * 60, 6 * 60 * 60, 24 * 60 * 60)
+SQLITE_PARAM_LIMIT = 900
+
+
+def _chunk_list[T](items: list[T], chunk_size: int = SQLITE_PARAM_LIMIT) -> list[list[T]]:
+    return [items[i : i + chunk_size] for i in range(0, len(items), chunk_size)]
 
 
 class DeadProxyCache:
@@ -30,19 +35,21 @@ class DeadProxyCache:
         if not endpoints:
             return set()
         now_dt = _parse_timestamp(now) or datetime.now(UTC)
-        placeholders = ",".join("?" for _ in endpoints)
+        skipped: set[str] = set()
         with self._connect() as connection:
-            rows = connection.execute(
-                f"""
-                SELECT endpoint FROM proxy_failures
-                WHERE source_protocol = ?
-                AND endpoint IN ({placeholders})
-                AND skip_until > ?
-                """,
-                (source_protocol, *endpoints, now_dt.isoformat()),
-            ).fetchall()
-        return {str(row["endpoint"]) for row in rows}
-
+            for chunk in _chunk_list(endpoints, SQLITE_PARAM_LIMIT):
+                placeholders = ",".join("?" for _ in chunk)
+                rows = connection.execute(
+                    f"""
+                    SELECT endpoint FROM proxy_failures
+                    WHERE source_protocol = ?
+                    AND endpoint IN ({placeholders})
+                    AND skip_until > ?
+                    """,
+                    (source_protocol, *chunk, now_dt.isoformat()),
+                ).fetchall()
+                skipped.update(str(row["endpoint"]) for row in rows)
+        return skipped
     def record_failure(self, source_protocol: Protocol, endpoint: str, last_error: str | None, now: str) -> None:
         existing = self._fetch(source_protocol, endpoint)
         fail_count = int(existing["fail_count"]) + 1 if existing is not None else 1
@@ -84,16 +91,17 @@ class DeadProxyCache:
         existing_counts: dict[str, int] = {}
         with self._connect() as connection:
             if failure_endpoints:
-                placeholders = ",".join("?" for _ in failure_endpoints)
-                rows = connection.execute(
-                    f"""
-                    SELECT endpoint, fail_count FROM proxy_failures
-                    WHERE source_protocol = ? AND endpoint IN ({placeholders})
-                    """,
-                    (source_protocol, *failure_endpoints),
-                ).fetchall()
-                existing_counts = {str(row["endpoint"]): int(row["fail_count"]) for row in rows}
-
+                for chunk in _chunk_list(failure_endpoints, SQLITE_PARAM_LIMIT):
+                    placeholders = ",".join("?" for _ in chunk)
+                    rows = connection.execute(
+                        f"""
+                        SELECT endpoint, fail_count FROM proxy_failures
+                        WHERE source_protocol = ? AND endpoint IN ({placeholders})
+                        """,
+                        (source_protocol, *chunk),
+                    ).fetchall()
+                    for row in rows:
+                        existing_counts[str(row["endpoint"])] = int(row["fail_count"])
             if successes:
                 connection.executemany(
                     "DELETE FROM proxy_failures WHERE source_protocol = ? AND endpoint = ?",
@@ -138,6 +146,8 @@ class DeadProxyCache:
 
     def _initialize(self) -> None:
         with self._connect() as connection:
+            connection.execute("PRAGMA journal_mode = WAL")
+            connection.execute("PRAGMA synchronous = NORMAL")
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS proxy_failures (
@@ -151,6 +161,9 @@ class DeadProxyCache:
                 )
                 """
             )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_proxy_failures_skip_until ON proxy_failures (skip_until)"
+            )
 
     def _fetch(self, source_protocol: Protocol, endpoint: str) -> sqlite3.Row | None:
         with self._connect() as connection:
@@ -160,10 +173,10 @@ class DeadProxyCache:
             ).fetchone()
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.database_path)
+        connection = sqlite3.connect(self.database_path, timeout=5.0)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout = 5000")
         return connection
-
 
 def _backoff_seconds(fail_count: int) -> int:
     return BACKOFF_SECONDS[min(max(1, fail_count), len(BACKOFF_SECONDS)) - 1]

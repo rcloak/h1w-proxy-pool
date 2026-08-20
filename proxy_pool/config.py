@@ -59,25 +59,37 @@ def load_config(path: str | Path = "config.ini") -> Settings:
     parser = ConfigParser(interpolation=None)
     parser.read(config_path, encoding="utf-8")
 
+    if not parser.has_section("General"):
+        parser.add_section("General")
+
     general = parser["General"]
     save_path_value = general.get("SavePath", "").strip()
     save_path = Path(save_path_value) if save_path_value else config_path.parent
 
+    raw_filename = general.get("JsonResultFilename", "proxies.json").strip()
+    json_result_filename = Path(raw_filename).name if raw_filename else "proxies.json"
+    if not json_result_filename or json_result_filename in (".", ".."):
+        json_result_filename = "proxies.json"
+
+    timeout = max(0.1, _get_checker_float(general, "Timeout", 10.0))
+    max_connections = max(1, _get_checker_int(general, "MaxConnections", 900))
+    refresh_interval = max(1, _get_checker_int(general, "RefreshIntervalSeconds", 900))
+    save_format = general.get("SaveFormat", "json").strip().lower() or "json"
+
     checker = _load_checker_settings(parser)
     return Settings(
         config_path=config_path,
-        timeout=general.getfloat("Timeout", fallback=10),
-        max_connections=general.getint("MaxConnections", fallback=900),
-        sort_by_speed=general.getboolean("SortBySpeed", fallback=True),
+        timeout=timeout,
+        max_connections=max_connections,
+        sort_by_speed=_get_checker_bool(general, "SortBySpeed", True),
         save_path=save_path,
-        json_result_filename=general.get("JsonResultFilename", fallback="proxies.json"),
-        save_format=general.get("SaveFormat", fallback="json"),
-        refresh_interval_seconds=general.getint("RefreshIntervalSeconds", fallback=900),
+        json_result_filename=json_result_filename,
+        save_format=save_format,
+        refresh_interval_seconds=refresh_interval,
         sources=_load_sources(parser),
         checker=checker,
         dead_cache=_load_dead_cache_settings(parser, save_path),
     )
-
 
 def _load_sources(parser: ConfigParser) -> dict[Protocol, tuple[str, ...]]:
     sources: dict[Protocol, tuple[str, ...]] = {}

@@ -81,3 +81,15 @@ def test_dead_cache_records_batch_results_in_one_operation(tmp_path: Path):
     assert cache.should_skip("http", "1.2.3.4:80", "2026-05-22T12:20:00+00:00") is False
     assert cache.should_skip("http", "5.6.7.8:80", "2026-05-22T12:20:00+00:00") is True
     assert cache.should_skip("http", "9.9.9.9:80", "2026-05-22T12:20:00+00:00") is True
+
+
+def test_dead_cache_handles_large_batches_exceeding_sqlite_limit(tmp_path: Path):
+    cache = DeadProxyCache(tmp_path / "proxy_state.sqlite3")
+    endpoints = [f"1.1.1.{i % 250}:{1000 + i}" for i in range(2500)]
+    failures = {endpoint: "TimeoutError" for endpoint in endpoints}
+
+    cache.record_batch("http", successes=[], failures=failures, now=NOW)
+    skipped = cache.get_skipped_endpoints("http", endpoints, "2026-05-22T12:10:00+00:00")
+
+    assert len(skipped) == len(endpoints)
+    assert cache.stats("2026-05-22T12:10:00+00:00")["stored"] == 2500

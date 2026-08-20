@@ -136,15 +136,15 @@ def valid_endpoint(value: str) -> bool:
     host, separator, port = value.rpartition(":")
     if not separator or not host or not port:
         return False
+    clean_host = host.strip("[]")
     try:
-        ip_address(host)
+        ip_address(clean_host)
         if not port.isdigit():
             return False
         port_number = int(port)
     except ValueError:
         return False
     return 1 <= port_number <= 65535
-
 
 def _clamp_float(value: float, minimum: float, maximum: float, default: float) -> float:
     if not isfinite(value):

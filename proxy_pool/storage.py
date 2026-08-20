@@ -17,11 +17,18 @@ from proxy_pool.models import (
     valid_endpoint,
 )
 
+_document_cache: dict[Path, tuple[float, ProxyDocument]] = {}
+
 
 def read_proxy_document(path: Path) -> ProxyDocument:
     try:
+        stat_res = path.stat()
+        cached = _document_cache.get(path)
+        if cached is not None and cached[0] == stat_res.st_mtime:
+            return cached[1]
+
         payload = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return empty_proxy_document()
 
     if not isinstance(payload, dict) or payload.get("version") != 2:
@@ -33,8 +40,11 @@ def read_proxy_document(path: Path) -> ProxyDocument:
     if isinstance(items, list):
         result["items"] = [normalized for item in items if (normalized := _normalize_proxy_item(item)) is not None]
     result["total"] = len(result["items"])
+    try:
+        _document_cache[path] = (path.stat().st_mtime, result)
+    except OSError:
+        pass
     return result
-
 
 def _normalize_proxy_item(item: object) -> ProxyItem | None:
     if not isinstance(item, dict):
@@ -111,7 +121,10 @@ def write_proxy_document(path: Path, payload: ProxyDocument) -> None:
     normalized["items"] = [normalized_item for item in payload.get("items", []) if (normalized_item := _normalize_proxy_item(item))]
     normalized["total"] = len(normalized["items"])
     _write_json_atomic(path, cast(dict[str, Any], normalized))
-
+    try:
+        _document_cache[path] = (path.stat().st_mtime, normalized)
+    except OSError:
+        pass
 
 def _valid_ip(value: str) -> bool:
     try:
@@ -134,7 +147,7 @@ def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
             delete=False,
         ) as temp_file:
             temp_path = Path(temp_file.name)
-            json.dump(payload, temp_file)
+            json.dump(payload, temp_file, separators=(",", ":"))
             temp_file.flush()
             os.fsync(temp_file.fileno())
 

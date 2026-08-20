@@ -246,9 +246,15 @@ def sort_checked(proxies: Iterable[CheckedProxy], sort_by_speed: bool) -> list[C
 
 
 def _natural_address_key(address: str) -> tuple[int, ...]:
-    return tuple(map(int, address.replace(":", ".").split(".")))
-
-
+    host, _, port = address.rpartition(":")
+    clean_host = host.strip("[]")
+    try:
+        addr = ip_address(clean_host)
+        port_num = int(port) if port.isdigit() else 0
+        return (addr.version, *addr.packed, port_num)
+    except ValueError:
+        parts = [int(p) for p in address.replace(":", ".").split(".") if p.isdigit()]
+        return (0, *parts)
 def build_proxy_document(proxies: Iterable[CheckedProxy], generated_at: str) -> ProxyDocument:
     items = [checked_proxy_to_item(proxy) for proxy in proxies]
     return {"version": 2, "generated_at": generated_at, "total": len(items), "items": items}
@@ -333,12 +339,12 @@ async def run_pipeline(
             checked_count += len(batch)
             sorted_proxies = sort_checked(checked, settings.sort_by_speed)
             payload = build_proxy_document(sorted_proxies, generated_at=checked_at)
-            write_proxy_document(settings.result_path, payload)
+            await asyncio.to_thread(write_proxy_document, settings.result_path, payload)
             emit_progress(protocol)
 
     if payload is None:
         payload = build_proxy_document([], generated_at=checked_at)
-        write_proxy_document(settings.result_path, payload)
+        await asyncio.to_thread(write_proxy_document, settings.result_path, payload)
     return payload
 
 

@@ -32,6 +32,13 @@ def test_read_proxy_document_returns_empty_for_non_v2_file(tmp_path: Path):
     assert read_proxy_document(target) == empty_proxy_document()
 
 
+def test_read_proxy_document_returns_empty_for_binary_corrupted_file(tmp_path: Path):
+    target = tmp_path / "proxies.json"
+    target.write_bytes(b"\x80\x81\xff\xfe{\x00\x00")
+
+    assert read_proxy_document(target) == empty_proxy_document()
+
+
 def test_read_proxy_document_normalizes_v2_items_and_recomputes_total(tmp_path: Path):
     target = tmp_path / "proxies.json"
     target.write_text(
